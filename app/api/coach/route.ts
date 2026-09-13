@@ -1,20 +1,99 @@
-import { NextResponse } from 'next/server'
+import { type NextRequest } from 'next/server'
+import { coachFragen } from '@/lib/coach/agent'
 
 export const dynamic = 'force-dynamic'
+/** Der Coach braucht Node, nicht die Edge-Laufzeit: er startet einen Unterprozess. */
+export const runtime = 'nodejs'
 
-/**
- * Platzhalter bis Phase 5. Der Antwortstrom in der Oberfläche steht schon;
- * hier fehlt noch das Agent SDK.
- */
-export function POST() {
+interface Anfrage {
+  frage?: unknown
+  verlauf?: unknown
+}
+
+function verlaufLesen(roh: unknown): Array<{ rolle: 'du' | 'coach'; text: string }> {
+  if (!Array.isArray(roh)) return []
+  return roh
+    .filter(
+      (n): n is { rolle: 'du' | 'coach'; text: string } =>
+        typeof n === 'object' &&
+        n !== null &&
+        (n as { rolle?: unknown }).rolle !== undefined &&
+        ((n as { rolle: unknown }).rolle === 'du' ||
+          (n as { rolle: unknown }).rolle === 'coach') &&
+        typeof (n as { text?: unknown }).text === 'string',
+    )
+    // Nur die letzten Züge, damit der Zusammenhang nicht unbegrenzt wächst.
+    .slice(-12)
+    .map((n) => ({ rolle: n.rolle, text: n.text.slice(0, 4000) }))
+}
+
+export async function POST(anfrage: NextRequest) {
   if (!process.env['ANTHROPIC_API_KEY']) {
-    return NextResponse.json(
+    return Response.json(
       { fehler: 'Der Coach ist nicht eingerichtet. ANTHROPIC_API_KEY fehlt.' },
       { status: 503 },
     )
   }
-  return NextResponse.json(
-    { fehler: 'Der Coach kommt in Phase 5.' },
-    { status: 503 },
-  )
+
+  let koerper: Anfrage
+  try {
+    koerper = (await anfrage.json()) as Anfrage
+  } catch {
+    return Response.json({ fehler: 'Unlesbare Anfrage.' }, { status: 400 })
+  }
+
+  const frage = typeof koerper.frage === 'string' ? koerper.frage.trim() : ''
+  if (frage.length === 0) {
+    return Response.json({ fehler: 'Die Frage ist leer.' }, { status: 400 })
+  }
+  if (frage.length > 4000) {
+    return Response.json(
+      { fehler: 'Die Frage ist länger als 4000 Zeichen.' },
+      { status: 400 },
+    )
+  }
+
+  const verlauf = verlaufLesen(koerper.verlauf)
+  const kodierer = new TextEncoder()
+
+  const strom = new ReadableStream<Uint8Array>({
+    async start(steuerung) {
+      function senden(ereignis: unknown) {
+        steuerung.enqueue(kodierer.encode(`data: ${JSON.stringify(ereignis)}\n\n`))
+      }
+
+      try {
+        for await (const e of coachFragen(frage, verlauf, (name) => {
+          // Ein abgewiesenes Werkzeug ist eine Zeile im Strom, kein stiller
+          // Vorgang — wer zusieht, soll es sehen.
+          senden({
+            art: 'werkzeug',
+            id: `abgewiesen-${name}`,
+            beschriftung: `Werkzeug ${name} abgewiesen`,
+            detail: 'Dem Coach stehen ausschließlich die Werkzeuge von Takt zur Verfügung.',
+            laeuft: false,
+          })
+        })) {
+          senden(e)
+        }
+      } catch (fehler) {
+        senden({
+          art: 'fehler',
+          text: fehler instanceof Error ? fehler.message : 'Unbekannter Fehler',
+        })
+      } finally {
+        steuerung.close()
+      }
+    },
+  })
+
+  return new Response(strom, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      // Sonst puffert ein vorgeschalteter Server den Strom und nichts bewegt sich.
+      'X-Accel-Buffering': 'no',
+    },
+  })
 }

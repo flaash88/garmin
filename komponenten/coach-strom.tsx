@@ -84,7 +84,13 @@ export function CoachStrom() {
       const antwort = await fetch('/api/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ frage }),
+        body: JSON.stringify({
+          frage,
+          // Bisherige Züge mitgeben, damit der Coach den Faden hält.
+          verlauf: verlauf
+            .filter((n) => n.text.length > 0)
+            .map((n) => ({ rolle: n.rolle, text: n.text })),
+        }),
         signal: abbruch.current.signal,
       })
 
@@ -149,7 +155,9 @@ export function CoachStrom() {
       const letzte = neu.at(-1)
       if (!letzte) return v
 
-      if (e['art'] === 'text' && typeof e['text'] === 'string') {
+      if (e['art'] === 'fehler' && typeof e['text'] === 'string') {
+        neu[neu.length - 1] = { ...letzte, fehler: e['text'] }
+      } else if (e['art'] === 'text' && typeof e['text'] === 'string') {
         neu[neu.length - 1] = { ...letzte, text: letzte.text + e['text'] }
       } else if (e['art'] === 'werkzeug' && typeof e['id'] === 'string') {
         const vorhanden = letzte.werkzeuge.find((w) => w.id === e['id'])

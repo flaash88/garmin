@@ -150,3 +150,21 @@ export const feldbefuellung = pgTable('feldbefuellung', {
   gesamt: integer('gesamt').notNull(),
   geprueftAm: timestamp('geprueft_am', { withTimezone: true }).notNull().defaultNow(),
 })
+
+/**
+ * Ergebnisse der festen Analysen. Das Wochenbriefing entsteht einmal
+ * wöchentlich, nicht bei jedem Seitenaufruf.
+ */
+export const analysen = pgTable(
+  'analysen',
+  {
+    id: varchar('id', { length: 96 }).primaryKey(),
+    art: varchar('art', { length: 32 }).notNull(),
+    /** Worauf sie sich bezieht: Kalenderwoche, Aktivitätskennung, Tag. */
+    bezug: varchar('bezug', { length: 64 }).notNull(),
+    text: text('text').notNull(),
+    modell: varchar('modell', { length: 64 }).notNull(),
+    erstelltAm: timestamp('erstellt_am', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('analysen_art_bezug_idx').on(t.art, t.bezug)],
+)

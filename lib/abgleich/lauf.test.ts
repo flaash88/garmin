@@ -39,10 +39,35 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
   beforeEach(async () => {
     vi.mocked(endpunkte.aktivitaetenHolen).mockReset()
     vi.mocked(endpunkte.wellnessHolen).mockReset()
+    /*
+     * Nur die eigenen Zeilen wegräumen, nicht die Tabellen leeren.
+     *
+     * Ein `truncate` hier hat die Testdateien der Phase 5 umgeworfen: die
+     * legen eigene Probezeilen an, und vitest führt Dateien nebenläufig aus.
+     * Unter UTC ging es gut, unter America/New_York verschob sich die
+     * Reihenfolge und vier Tests fielen um — ein Fehlschlag, der nichts mit
+     * Zeitzonen zu tun hatte, sondern mit geteiltem Zustand. Siehe
+     * DECISIONS.md, E5.6.
+     */
     await datenbank().execute(
-      sql`truncate ${schema.aktivitaeten}, ${schema.wellness}, ${schema.abgleich}, ${schema.feldbefuellung} cascade`,
+      sql`delete from ${schema.aktivitaeten} where id like 'i%'`,
+    )
+    await datenbank().execute(
+      sql`delete from ${schema.wellness} where tag between '2026-09-01' and '2026-09-30'`,
+    )
+    await datenbank().execute(sql`delete from ${schema.abgleich}`)
+    await datenbank().execute(
+      sql`delete from ${schema.feldbefuellung} where quelle = 'wellness'`,
     )
   })
+
+  /** Nur die Zeilen dieser Datei — erkennbar am Praefix i. */
+  async function eigeneAktivitaeten() {
+    return datenbank()
+      .select()
+      .from(schema.aktivitaeten)
+      .where(sql`id like 'i%'`)
+  }
 
   const AKTIVITAET = {
     id: 'i4711',
@@ -59,7 +84,7 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
     const anzahl = await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
     expect(anzahl).toBe(1)
 
-    const zeilen = await datenbank().select().from(schema.aktivitaeten)
+    const zeilen = await eigeneAktivitaeten()
     expect(zeilen).toHaveLength(1)
     expect(zeilen[0]?.name).toBe('Morgenlauf')
     expect(zeilen[0]?.belastung).toBe(62)
@@ -71,7 +96,7 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
     await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
     await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
 
-    const zeilen = await datenbank().select().from(schema.aktivitaeten)
+    const zeilen = await eigeneAktivitaeten()
     expect(zeilen).toHaveLength(1)
   })
 
@@ -84,7 +109,7 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
     ])
     await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
 
-    const zeilen = await datenbank().select().from(schema.aktivitaeten)
+    const zeilen = await eigeneAktivitaeten()
     expect(zeilen).toHaveLength(1)
     expect(zeilen[0]?.name).toBe('Morgenlauf, umbenannt')
     expect(zeilen[0]?.belastung).toBe(70)
@@ -134,7 +159,10 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
     ])
     await lauf.wellnessAbgleichen({ schluessel: 'x', athletId: 'i1' })
 
-    const zeilen = await datenbank().select().from(schema.wellness)
+    const zeilen = await datenbank()
+      .select()
+      .from(schema.wellness)
+      .where(sql`tag = '2026-09-13'`)
     expect(zeilen[0]?.tag).toBe('2026-09-13')
     expect(zeilen[0]?.ctl).toBeCloseTo(52.4, 6)
     expect(zeilen[0]?.notizen).toBe('Mued.')

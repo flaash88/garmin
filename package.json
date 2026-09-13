@@ -15,15 +15,19 @@
     "db:migrate": "drizzle-kit migrate",
     "hash": "tsx scripts/hash.ts",
     "erstbefuellung": "tsx --env-file-if-exists=.env scripts/erstbefuellung.ts",
-    "abgleich": "tsx --env-file-if-exists=.env scripts/abgleich.ts"
+    "abgleich": "tsx --env-file-if-exists=.env scripts/abgleich.ts",
+    "briefing": "tsx --env-file-if-exists=.env scripts/briefing.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.270",
+    "@anthropic-ai/sdk": "0.125.0",
     "@node-rs/argon2": "^2.2.1",
     "drizzle-orm": "0.45.2",
     "next": "16.3.5",
     "pg": "8.16.3",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
