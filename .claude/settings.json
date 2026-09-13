@@ -5,8 +5,8 @@
   "extraKnownMarketplaces": {
     "everything-claude-code": {
       "source": {
-        "source": "github",
-        "repo": "WorldFlowAI/everything-claude-code"
+        "source": "directory",
+        "path": "./werkzeug/everything-claude-code"
       }
     }
   }

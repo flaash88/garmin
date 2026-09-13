@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
-# Stellt den Werkzeugkasten aus Phase 0 wieder her.
+# Meldet den Werkzeugkasten bei Claude Code an.
 #
-# Nötig, wenn der Container neu aufgesetzt wurde: .claude/settings.json im
-# Repo erklärt Marktplatz und Plugin zwar, der Plugin-Zwischenspeicher liegt
-# aber unter ~/.claude/plugins/ und ist dann leer. Das Skript holt ihn zurück.
+# Die Plugin-Dateien selbst liegen im Repo unter
+# werkzeug/everything-claude-code/ und sind nach dem Auschecken schon da.
+# Es wird nichts aus dem Netz geholt. Das Skript trägt sie nur in den
+# Plugin-Zwischenspeicher unter ~/.claude/plugins/ ein, der in einem
+# frischen Container leer ist.
 #
 # Aufruf aus dem Projektwurzelverzeichnis:  bash scripts/werkzeugkasten.sh
 # Mehrfacher Aufruf ist unschädlich.
 
 set -euo pipefail
 
-MARKTPLATZ="WorldFlowAI/everything-claude-code"
+QUELLE="./werkzeug/everything-claude-code"
 PLUGIN="everything-claude-code@everything-claude-code"
 
 cd "$(dirname "$0")/.."
 
-if [ ! -f .claude/settings.json ]; then
-  echo "Fehler: .claude/settings.json fehlt. Falsches Verzeichnis?" >&2
+if [ ! -f "$QUELLE/.claude-plugin/marketplace.json" ]; then
+  echo "Fehler: $QUELLE/.claude-plugin/marketplace.json fehlt." >&2
+  echo "Liegt das Repo vollständig vor?" >&2
   exit 1
 fi
 
@@ -25,25 +28,30 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "1/3  Marktplatz $MARKTPLATZ (Geltungsbereich: project)"
-claude plugin marketplace add "$MARKTPLATZ" --scope project
+echo "1/3  Marktplatz aus $QUELLE (Geltungsbereich: project)"
+claude plugin marketplace add "$QUELLE" --scope project
 
 echo "2/3  Plugin $PLUGIN (Geltungsbereich: project)"
 claude plugin install "$PLUGIN" --scope project
 
-echo "3/3  Paketmanager pnpm (Geltungsbereich: project)"
-if [ -f .claude/package-manager.json ]; then
-  echo "     .claude/package-manager.json liegt schon vor, unverändert."
-else
-  printf '{\n  "packageManager": "pnpm"\n}\n' > .claude/package-manager.json
-  echo "     .claude/package-manager.json angelegt."
-fi
+# 'claude plugin marketplace add' schreibt den Pfad absolut in
+# .claude/settings.json zurueck. Das waere beim naechsten Auschecken an
+# anderer Stelle falsch, also wieder auf den relativen Pfad bringen.
+echo "3/3  Pfad in .claude/settings.json relativ halten"
+python3 - "$QUELLE" <<'PY'
+import json, pathlib, sys
+quelle = sys.argv[1]
+p = pathlib.Path(".claude/settings.json")
+d = json.loads(p.read_text(encoding="utf-8"))
+q = d.get("extraKnownMarketplaces", {}).get("everything-claude-code", {}).get("source", {})
+if q.get("path") != quelle:
+    q["path"] = quelle
+    p.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
+    print("     auf %s zurueckgesetzt." % quelle)
+else:
+    print("     schon relativ, unveraendert.")
+PY
 
 echo
 echo "Fertig. Stand:"
 claude plugin list
-
-echo
-echo "Wichtig: Komponenten des Plugins (Skills, Agenten, Slash-Befehle) werden"
-echo "erst beim Start einer Sitzung geladen. In der laufenden Sitzung bleiben"
-echo "sie inaktiv — siehe E0.9 in DECISIONS.md."

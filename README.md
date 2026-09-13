@@ -9,32 +9,43 @@ die Entwicklung nötig ist.
 
 ## Werkzeugkasten
 
-Marktplatz und Plugin sind **projektweise** erklärt, nicht im
-Home-Verzeichnis. Die Erklärung liegt in `.claude/settings.json` und ist
-im Repo eingecheckt:
+Die Plugin-Dateien liegen **im Repo** unter `werkzeug/everything-claude-code/`
+und sind nach dem Auschecken sofort da. Zur Laufzeit wird nichts aus dem Netz
+geholt. `.claude/settings.json` zeigt als Marktplatz auf dieses Verzeichnis:
 
-- Marktplatz `WorldFlowAI/everything-claude-code`
-- Plugin `everything-claude-code@everything-claude-code`
-- Paketmanager pnpm über `.claude/package-manager.json`
+```json
+"source": { "source": "directory", "path": "./werkzeug/everything-claude-code" }
+```
 
-Eine neue Sitzung in diesem Verzeichnis liest das und richtet sich danach.
+Dazu `.claude/package-manager.json` mit pnpm. Beides ist eingecheckt und
+projektweise, nicht im Home-Verzeichnis.
+
+### Herkunft und Lizenz der Kopie
+
+    Projekt:  everything-claude-code
+    Herkunft: https://github.com/WorldFlowAI/everything-claude-code
+    Stand:    432485ba6b92c14fb357276a98957f348bcff9ee
+    Autor:    Affaan Mustafa
+    Lizenz:   MIT (im Manifest erklärt, keine LICENSE-Datei im Ursprung)
+
+Die Kopie ist unverändert übernommen, ohne `.git`. `claude plugin list` zeigt
+als Version den Commit *dieses* Repos, nicht den des Ursprungs — der Stand
+oben ist maßgeblich.
 
 ### Nach einem neuen Container
 
-Der Plugin-Zwischenspeicher liegt unter `~/.claude/plugins/` und ist in
-einem frischen Container leer. Die Erklärung im Repo bleibt zwar bestehen,
-der Inhalt muss aber einmal geholt werden:
+Die Dateien liegen zwar da, der Plugin-Zwischenspeicher unter
+`~/.claude/plugins/` ist aber leer. Einmal anmelden:
 
 ```
 bash scripts/werkzeugkasten.sh
 ```
 
-Das Skript ist idempotent, ein zweiter Aufruf schadet nicht.
+Idempotent. Das Skript hält außerdem den Pfad in `.claude/settings.json`
+relativ — `claude plugin marketplace add` schreibt ihn sonst absolut zurück,
+was bei einem Auschecken an anderer Stelle bräche.
 
-Die Komponenten des Plugins — Skills, Agenten, Slash-Befehle — werden erst
-**beim Start einer Sitzung** geladen. Wer das Skript mitten in einer
-laufenden Sitzung aufruft, hat sie in dieser Sitzung noch nicht zur
-Verfügung. Hintergrund in `DECISIONS.md`, Eintrag E0.9.
+Zum Ladezeitpunkt siehe `DECISIONS.md`, Einträge E0.9 und E0.11.
 
 ## Entscheidungen
 

@@ -105,6 +105,13 @@ gezeigt. Das Ergebnis kommt hierher.
 
 ### E0.9 — Das Plugin wirkt in dieser Sitzung nicht
 
+> **Überholt, siehe E0.11.** Der Befund stimmte zum Zeitpunkt der Messung.
+> Die Komponenten wurden danach **mitten in der Sitzung nachgeladen**, ohne
+> Neustart. Zwei der vier Belege waren zudem untauglich — Begründung in
+> E0.11. Der Eintrag bleibt unverändert stehen, damit der Irrweg
+> nachvollziehbar ist.
+
+
 **Befund, auf Nachfrage geprüft.** Das Plugin liegt auf der Platte und ist
 aktiviert, seine Komponenten sind in dieser Sitzung aber **nicht geladen**.
 Sie werden erst beim Start einer Sitzung eingelesen.
@@ -155,3 +162,56 @@ Erklärung im Repo überlebt zwar, der Plugin-Zwischenspeicher unter
 `~/.claude/plugins/` aber nicht. In einem frischen Container muss der
 Inhalt einmal geholt werden. Das Skript tut genau das, ist idempotent und
 wurde durch zweimaligen Aufruf geprüft. Aufruf ist im README dokumentiert.
+
+### E0.11 — Korrektur zu E0.9: Komponenten laden mitten in der Sitzung
+
+**E0.9 war im Ergebnis richtig, in der Beweisführung teilweise falsch, und
+ist inzwischen überholt.**
+
+Was nicht trug: `ListPlugins` und `ListSkills` listen die Plugins und Skills
+des **claude.ai-Kontos**, nicht die lokal über die CLI installierten. Ihre
+leeren Antworten waren kein Beleg für den Zustand des lokalen Plugins. Die
+beiden anderen Belege trugen: die Skill-Liste der Sitzung ohne Präfix
+`everything-claude-code:` und die Agententypen ohne die neun Plugin-Agenten.
+
+Was seither geschah: nach der Installation im Projekt-Geltungsbereich (E0.10)
+hat die Umgebung die Komponenten **während der laufenden Sitzung
+nachgemeldet** — neun Agenten `everything-claude-code:architect` bis
+`…:tdd-guide` und zwölf Skills `everything-claude-code:plan`,
+`…:tdd`, `…:coding-standards` und weitere. Kein Neustart nötig.
+
+**Folge:** Die Sorge, `werkzeugkasten.sh` verschiebe das Problem nur, ist
+damit ausgeräumt. Ein Aufruf mitten in der Sitzung wirkt in derselben
+Sitzung. `/plan` und `/code-review` stehen als Plugin-Befehle zur Verfügung.
+
+### E0.12 — Plugin-Dateien ins Repo kopiert, Marktplatz zeigt lokal
+
+**Auf Anweisung, Bedingung traf zu.** Zu den drei Fragen:
+
+1. **Überlebt `~/.claude/plugins/` zwischen Sitzungen? Nein.** Die Umgebung
+   ist ausdrücklich flüchtig: der Container wird nach Untätigkeit oder am
+   Sitzungsende eingezogen, das Repo bei jedem Start frisch geklont. Nur
+   was im Repo liegt, überlebt. Von innen heraus über Sitzungsgrenzen
+   hinweg nicht messbar — die Aussage stützt sich auf die zugesicherte
+   Eigenschaft der Umgebung, nicht auf einen eigenen Versuch.
+
+2. **Lokaler Marktplatz? Ja, geprüft.** `claude plugin marketplace add`
+   nimmt neben einem GitHub-Repo auch einen Pfad und schreibt dann
+   `"source": "directory"` in die Einstellungen. Umgesetzt:
+
+       werkzeug/everything-claude-code/    656 KB, ohne .git
+       .claude/settings.json               zeigt auf ./werkzeug/…
+
+   Damit liegen die Dateien beim Auschecken schon da, es wird zur Laufzeit
+   nichts nachgeladen. Herkunft, Stand `432485ba6b92` und MIT stehen im
+   README.
+
+3. Punkt 3 entfällt, weil Punkt 2 geklappt hat.
+
+**Ein Fallstrick, gefunden und behoben:** `claude plugin marketplace add`
+schreibt den Pfad **absolut** nach `.claude/settings.json`
+(`/home/user/garmin/werkzeug/…`). Beim Auschecken an anderer Stelle wäre er
+falsch. Ein relativer Pfad `./werkzeug/everything-claude-code` wird dagegen
+anstandslos angenommen und gegen das Projektwurzelverzeichnis aufgelöst.
+`scripts/werkzeugkasten.sh` setzt den Pfad nach jedem Lauf wieder relativ.
+Durch zwei aufeinanderfolgende Läufe geprüft.
