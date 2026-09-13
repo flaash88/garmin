@@ -1208,3 +1208,131 @@ dort eine Zeichenkette mit leerem Passwort; der Wächter in
 `sql-ausfuehren.ts`, der „Der Coach braucht eine eigene Rolle" sagen soll,
 griff nie, und stattdessen kam ein nackter Anmeldefehler aus der Datenbank.
 Jetzt `${TAKT_COACH_PASSWORT:+…}` — ohne Passwort bleibt die Variable leer.
+
+---
+
+## Phase 7 — Zugang über das Claude-Code-Abo
+
+### E7.1 — `CLAUDE_CODE_OAUTH_TOKEN` statt `ANTHROPIC_API_KEY`
+
+**Auf Anweisung.** Der Coach läuft über das Abo des Nutzers, nicht über einen
+API-Schlüssel. Der Token wird interaktiv mit `claude setup-token` erzeugt und
+beginnt mit `sk-ant-oat01-`.
+
+`ANTHROPIC_API_KEY` ist **vollständig entfernt** — aus `.env.beispiel`, aus
+`docker-compose.yml`, aus dem README und aus jedem Codepfad. Geprüft: kein
+funktionaler Zugriff mehr, nur noch Kommentare, die erklären, warum die
+Variable nicht gesetzt wird.
+
+Der Grund trägt: im Bündel des SDK stehen beide in derselben Gruppe —
+`["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", …]`
+—, und die Auswahl fällt nach Reihenfolge. Sind beide gesetzt, hängt an
+dieser Reihenfolge, welches Konto die Nutzung trägt. Eine Quelle, keine
+Mehrdeutigkeit.
+
+`zugangPruefen()` weist einen API-Schlüssel an dieser Stelle ausdrücklich ab,
+statt ihn durchzulassen. Er würde nämlich **funktionieren** — nur eben über
+das falsche Konto abgerechnet. Das ist der häufigste Vertipper und der
+stillste. In der Begründung steht nur der Anfang des Werts, nie der ganze;
+ein Test hält das fest.
+
+### E7.2 — Auch das Wochenbriefing über diesen Weg
+
+**Abweichung vom ursprünglichen Auftrag, auf Anweisung.** Der Auftrag sah für
+die festen Analysen die Messages-API mit eigenen Werkzeugdefinitionen vor.
+Die bräuchte einen zweiten Zugang — für eine einzige Funktion.
+
+`lib/coach/analysen.ts` liest jetzt den Strom von `coachFragen`, also
+denselben Weg wie der freie Chat. Der Unterschied liegt nicht mehr im Weg,
+sondern im Auftrag: der Text steht fest, und das Ergebnis wird abgelegt statt
+gestreamt. Die Abhängigkeit `@anthropic-ai/sdk` ist entfernt; es blieb nichts
+übrig, was sie gebraucht hätte.
+
+Mitgenommen: die Werkzeuge sind damit buchstäblich dieselben wie im freien
+Chat, samt aller vier Schranken aus E5.4. Vorher waren es zwei Definitionen
+derselben Sache, die auseinanderlaufen konnten.
+
+### E7.3 — Abgelaufener Zugang ist ein eigener Zustand
+
+Ein abgelaufener Token verlangt eine andere Handlung als ein Netzausfall:
+nicht „Erneut", sondern einen neuen Token. Deshalb ein eigenes Ereignis
+`zugang` im Strom und ein eigener Block in der Oberfläche — in warnung, mit
+dem Befehl `claude setup-token` und dem Hinweis, dass alles außer dem Coach
+weiterläuft.
+
+Die Erkennung ist notgedrungen an Textmustern festgemacht: das SDK reicht den
+Fehler der Gegenseite als Zeichenkette durch, nicht als Klasse. Die Liste ist
+bewusst breit — lieber einmal zu viel „Zugang abgelaufen" als ein abgelaufener
+Token, der als allgemeiner Fehler erscheint und den Nutzer ratlos lässt. Neun
+Muster, dreizehn Tests, darunter fünf Fehler, die **nicht** als Zugangsfehler
+gelten dürfen.
+
+### E7.4 — Der englische Fehlertext wäre in der Sprechblase gelandet
+
+**Gefunden im Lauf mit einem abgelaufenen Token, nicht im Code gelesen.**
+
+Das SDK gibt einen Authentifizierungsfehler als ganz gewöhnlichen
+Antworttext aus, bevor das Ergebnis kommt. Der Strom sah so aus:
+
+    data: {"art":"text","text":"Failed to authenticate. API Error: 401 OAuth access token is invalid."}
+    data: {"art":"zugang","text":"Zugang abgelaufen — Token neu erzeugen"}
+
+Der erste Satz wäre in der Sprechblase gelandet — eine englische Zeichenkette
+in der Oberfläche, gegen die durchgehende Vorgabe, und obendrein vor dem
+richtigen deutschen Zustand.
+
+Jetzt wird Antworttext auf Zugangsfehler geprüft, **solange noch kein echter
+Text kam**. Die Einschränkung ist wichtig: eine lange Antwort, die beiläufig
+„401" erwähnt, soll nicht abgeschnitten werden. Nachgeprüft, der Strom trägt
+jetzt nur noch:
+
+    data: {"art":"zugang","text":"Zugang abgelaufen — Token neu erzeugen"}
+
+### E7.5 — Startprüfung, und der Zeitplan bleibt nicht hängen
+
+`instrumentation.ts` läuft einmal beim Hochfahren des Serverprozesses und
+schreibt ins Protokoll, was fehlt — der Coach-Zugang und die drei
+Pflichtwerte. Ein fehlender Token fällt damit beim Start auf und nicht erst,
+wenn jemand den Coach zum ersten Mal anspricht.
+
+Der Zeitplan prüft den Zugang vor jedem Briefing und behandelt einen
+abgelaufenen Token eigens: er benennt ihn, läuft weiter und versucht es beim
+nächsten Lauf erneut. Das Briefing ist dann noch nicht abgelegt, also holt
+der nächste Lauf es von selbst nach.
+
+Am laufenden Objekt geprüft, drei Fälle:
+
+| Fall | Verhalten |
+|---|---|
+| Kein Token | „CLAUDE_CODE_OAUTH_TOKEN ist nicht gesetzt. Der Coach antwortet nicht, alles andere läuft." plus `claude setup-token`; Briefing übersprungen |
+| API-Schlüssel statt Token | „beginnt mit «sk-ant-api03…» statt mit «sk-ant-oat01-»" |
+| Abgelaufener Token | echter 401 von der Gegenseite, erkannt als „Zugang abgelaufen — Token neu erzeugen … Nächster Versuch beim nächsten Lauf"; Prozess läuft weiter und endet sauber auf SIGTERM |
+
+Und in der Oberfläche: `/api/coach` antwortet mit 503 und nennt den Grund,
+die Seite „Mehr" zeigt „Token fehlt", „Token unbrauchbar" oder „Token
+hinterlegt".
+
+### E7.6 — Der Token gehört nicht in das Abbild
+
+Im `Dockerfile` wird er nirgends genannt und liegt in keiner Ebene. Er kommt
+über die Umgebung herein, die `docker compose` aus `.env` füllt, und geht von
+dort als eine von zehn Variablen an den Unterprozess des Coach (E5.4). Ein
+gebautes Abbild lässt sich weitergeben — was darin steckt, ist dauerhaft
+darin. Im README steht das ausdrücklich.
+
+### E7.7 — E5.5 bleibt offen: es liegt kein Token vor
+
+**Angehalten, ein Zugangsdatum fehlt.** Der Einschleusungstest mit echtem
+Modell — der letzte Punkt, der sich ohne intervals.icu schließen ließe —
+braucht einen gültigen `CLAUDE_CODE_OAUTH_TOKEN`. In dieser Umgebung ist
+keiner gesetzt; `claude setup-token` ist interaktiv und öffnet einen Browser,
+lässt sich hier also nicht ausführen.
+
+Alles andere steht bereit: die Aktivität mit dem eingeschleusten Notiztext
+liegt in der Datenbank, die Mechanik ist über den ganzen Weg belegt (E5.5),
+und der Ablauf ist ein Aufruf von Minuten. Sobald der Token in `.env` steht:
+
+    CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-… pnpm briefing
+
+und eine Frage an den Coach, die auf die Aktivität mit der Kennung
+`wz-probe` führt.

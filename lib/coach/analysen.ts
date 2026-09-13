@@ -1,119 +1,27 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { and, desc, eq } from 'drizzle-orm'
 import { datenbank } from '@/lib/db'
 import { analysen } from '@/lib/db/schema'
-import { athletenprofil } from './profil'
-import {
-  werkzeugAktivitaeten,
-  werkzeugAusruestung,
-  werkzeugBelastung,
-  werkzeugErholung,
-  werkzeugPlan,
-  werkzeugSql,
-  type WerkzeugAntwort,
-} from './werkzeuge'
+import { coachFragen, MODELL } from './agent'
 import { kalenderwoche } from '@/lib/daten/zeit'
+import { ZugangAbgelaufen } from './zugang'
 
 /**
  * Die festen Analysen — Wochenbriefing, Bewertung einer Einheit,
  * Plananpassung.
  *
- * Bewusst **nicht** über das Agent SDK, sondern über die Messages-API mit fest
- * umrissenen Werkzeugen. Zwei Gründe: die Aufgabe ist jedes Mal dieselbe, und
- * das Ergebnis wird abgelegt statt gestreamt. Ein Agent, der frei entscheidet,
- * wäre hier teurer und weniger vorhersagbar.
+ * Sie laufen über **denselben** Weg wie der freie Chat: das Agent SDK mit dem
+ * Token aus dem Claude-Code-Abo. Ursprünglich war dafür die Messages-API mit
+ * eigenen Werkzeugdefinitionen vorgesehen; die bräuchte einen zweiten Zugang,
+ * und für eine Funktion einen zweiten Zugang zu verlangen ist keine gute
+ * Vorgabe. Siehe DECISIONS.md, E7.2.
+ *
+ * Der Unterschied zum freien Chat liegt nicht im Weg, sondern im Auftrag: der
+ * Text steht fest, und das Ergebnis wird abgelegt statt gestreamt.
  */
 
-export const MODELL = 'claude-opus-5'
+export { MODELL }
 
 export type Analyseart = 'wochenbriefing' | 'einheit' | 'plananpassung'
-
-const WERKZEUGE: Anthropic.Tool[] = [
-  {
-    name: 'aktivitaeten',
-    description: 'Läufe im Zeitraum mit Strecke, Dauer, Puls und Belastung.',
-    input_schema: {
-      type: 'object',
-      properties: { zeitraum: { type: 'string' } },
-      required: ['zeitraum'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'belastung',
-    description: 'Wochenbelastung, Monotonie nach Foster, Belastungsdruck, Rampe.',
-    input_schema: {
-      type: 'object',
-      properties: { zeitraum: { type: 'string' } },
-      required: ['zeitraum'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'erholung',
-    description: 'Schlaf, HRV, Ruhepuls, Befinden, Beschwerden und Notizen je Tag.',
-    input_schema: {
-      type: 'object',
-      properties: { zeitraum: { type: 'string' } },
-      required: ['zeitraum'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'plan',
-    description: 'Geplante Einheiten einer Kalenderwoche.',
-    input_schema: {
-      type: 'object',
-      properties: { kw: { type: 'number' } },
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'ausruestung',
-    description: 'Schuhe und ihre Laufleistung.',
-    input_schema: { type: 'object', properties: {}, additionalProperties: false },
-  },
-  {
-    name: 'sql_abfrage',
-    description: 'Eine einzige SELECT-Anweisung gegen das Auswertungsschema.',
-    input_schema: {
-      type: 'object',
-      properties: { sql: { type: 'string' } },
-      required: ['sql'],
-      additionalProperties: false,
-    },
-  },
-]
-
-/** Dieselbe Wache wie im freien Chat — die Werkzeuge sind buchstäblich dieselben. */
-async function werkzeugAusfuehren(
-  name: string,
-  eingabe: Record<string, unknown>,
-): Promise<WerkzeugAntwort> {
-  const zeitraum = typeof eingabe['zeitraum'] === 'string' ? eingabe['zeitraum'] : ''
-  switch (name) {
-    case 'aktivitaeten':
-      return werkzeugAktivitaeten(zeitraum)
-    case 'belastung':
-      return werkzeugBelastung(zeitraum)
-    case 'erholung':
-      return werkzeugErholung(zeitraum)
-    case 'plan':
-      return werkzeugPlan(
-        typeof eingabe['kw'] === 'number' ? eingabe['kw'] : undefined,
-      )
-    case 'ausruestung':
-      return werkzeugAusruestung()
-    case 'sql_abfrage':
-      return werkzeugSql(typeof eingabe['sql'] === 'string' ? eingabe['sql'] : '')
-    default:
-      return {
-        beschriftung: `Werkzeug ${name} abgewiesen`,
-        detail: 'Unbekanntes Werkzeug.',
-        inhalt: JSON.stringify({ fehler: `Werkzeug ${name} gibt es nicht.` }),
-      }
-  }
-}
 
 const AUFTRAEGE: Record<Analyseart, (bezug: string) => string> = {
   wochenbriefing: (kw) =>
@@ -128,21 +36,22 @@ der Woche. Geh auf drei Dinge ein, in dieser Reihenfolge:
    wurden. Wurde nichts notiert, sag das ausdrücklich statt es wegzulassen.
 
 Höchstens 250 Wörter. Kein Vorspann, keine Überschrift, keine Aufzählung
-ohne Not.`,
+ohne Not. Gib nur das Briefing aus, keine Einleitung darüber, was du gleich
+tun wirst.`,
 
   einheit: (id) =>
     `Bewerte die Aktivität mit der Kennung ${id}.
 
 Vergleich sie mit den Läufen der letzten acht Wochen. Geh auf Pace, Puls und
 Belastung ein und sag, ob sie zum geplanten Zweck passte. Höchstens 150
-Wörter.`,
+Wörter. Gib nur die Bewertung aus.`,
 
   plananpassung: (kw) =>
     `Prüf den Plan für Kalenderwoche ${kw} gegen Form, Ermüdung und Rampe.
 
 Sag, ob er so bleiben kann. Wenn nicht, nenn genau die Einheiten, die du
 ändern würdest, und wie. Ändere nichts selbst — du schlägst vor, der Athlet
-entscheidet. Höchstens 200 Wörter.`,
+entscheidet. Höchstens 200 Wörter. Gib nur den Vorschlag aus.`,
 }
 
 export interface AnalyseErgebnis {
@@ -154,76 +63,31 @@ export async function analyseErzeugen(
   art: Analyseart,
   bezug: string,
 ): Promise<AnalyseErgebnis> {
-  const schluessel = process.env['ANTHROPIC_API_KEY']
-  if (!schluessel) {
-    throw new Error('ANTHROPIC_API_KEY fehlt.')
-  }
-
-  const klient = new Anthropic()
-  const profil = await athletenprofil()
-
-  const nachrichten: Anthropic.MessageParam[] = [
-    { role: 'user', content: AUFTRAEGE[art](bezug) },
-  ]
+  const stuecke: string[] = []
   const aufrufe: Array<{ beschriftung: string; detail: string }> = []
+  let zugangsfehler = false
 
-  // Höchstens acht Züge; danach soll geantwortet werden, nicht weiter geholt.
-  for (let zug = 0; zug < 8; zug += 1) {
-    const antwort = await klient.messages.create({
-      model: MODELL,
-      max_tokens: 16000,
-      thinking: { type: 'adaptive' },
-      system: [
-        // Das Profil ändert sich selten und steht vorn: nur so greift die
-        // Zwischenspeicherung der API.
-        { type: 'text', text: profil, cache_control: { type: 'ephemeral' } },
-      ],
-      tools: WERKZEUGE,
-      messages: nachrichten,
-    })
-
-    if (antwort.stop_reason === 'refusal') {
-      throw new Error('Der Coach hat die Anfrage abgelehnt.')
-    }
-
-    const werkzeugbloecke = antwort.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
-    )
-
-    if (werkzeugbloecke.length === 0) {
-      const text = antwort.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n')
-        .trim()
-      return { text, werkzeugaufrufe: aufrufe }
-    }
-
-    nachrichten.push({ role: 'assistant', content: antwort.content })
-
-    // Alle Werkzeugergebnisse in **einer** Nachricht zurück — getrennt
-    // gesendet gewöhnt sich das Modell parallele Aufrufe ab.
-    const ergebnisse: Anthropic.ToolResultBlockParam[] = []
-    for (const block of werkzeugbloecke) {
-      const eingabe =
-        typeof block.input === 'object' && block.input !== null
-          ? (block.input as Record<string, unknown>)
-          : {}
-      const antwortDesWerkzeugs = await werkzeugAusfuehren(block.name, eingabe)
+  for await (const e of coachFragen(AUFTRAEGE[art](bezug))) {
+    if (e.art === 'text' && e.text) stuecke.push(e.text)
+    else if (e.art === 'werkzeug') {
       aufrufe.push({
-        beschriftung: antwortDesWerkzeugs.beschriftung,
-        detail: antwortDesWerkzeugs.detail,
+        beschriftung: e.beschriftung ?? '',
+        detail: e.detail ?? '',
       })
-      ergebnisse.push({
-        type: 'tool_result',
-        tool_use_id: block.id,
-        content: antwortDesWerkzeugs.inhalt,
-      })
+    } else if (e.art === 'zugang') {
+      zugangsfehler = true
+    } else if (e.art === 'fehler') {
+      throw new Error(e.text ?? 'Der Coach hat abgebrochen.')
     }
-    nachrichten.push({ role: 'user', content: ergebnisse })
   }
 
-  throw new Error('Der Coach kam nach acht Zügen zu keiner Antwort.')
+  if (zugangsfehler) throw new ZugangAbgelaufen()
+
+  const text = stuecke.join('').trim()
+  if (text.length === 0) {
+    throw new Error('Der Coach hat keine Antwort geliefert.')
+  }
+  return { text, werkzeugaufrufe: aufrufe }
 }
 
 export async function analyseAblegen(
@@ -259,14 +123,21 @@ export async function juengstesBriefing() {
   return zeilen[0] ?? null
 }
 
+export function briefingBezug(heute = new Date()): string {
+  const { jahr, woche } = kalenderwoche(heute)
+  return `${jahr}-KW${String(woche).padStart(2, '0')}`
+}
+
 /**
  * Einmal wöchentlich, nicht bei jedem Seitenaufruf. Gibt zurück, ob etwas
  * erzeugt wurde.
+ *
+ * Wirft weiter — wer aufruft, entscheidet, was ein Fehlschlag bedeutet. Der
+ * Zeitplan protokolliert und versucht es beim nächsten Lauf erneut; ein
+ * Aufruf von Hand soll den Fehler sehen.
  */
 export async function briefingBeiBedarf(heute = new Date()): Promise<boolean> {
-  const { jahr, woche } = kalenderwoche(heute)
-  const bezug = `${jahr}-KW${String(woche).padStart(2, '0')}`
-
+  const bezug = briefingBezug(heute)
   if (await analyseHolen('wochenbriefing', bezug)) return false
 
   const ergebnis = await analyseErzeugen('wochenbriefing', bezug)

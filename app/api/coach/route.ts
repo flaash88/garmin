@@ -1,5 +1,6 @@
 import { type NextRequest } from 'next/server'
 import { coachFragen } from '@/lib/coach/agent'
+import { TOKEN_VARIABLE, zugangPruefen } from '@/lib/coach/zugang'
 
 export const dynamic = 'force-dynamic'
 /** Der Coach braucht Node, nicht die Edge-Laufzeit: er startet einen Unterprozess. */
@@ -28,9 +29,15 @@ function verlaufLesen(roh: unknown): Array<{ rolle: 'du' | 'coach'; text: string
 }
 
 export async function POST(anfrage: NextRequest) {
-  if (!process.env['ANTHROPIC_API_KEY']) {
+  const zugang = zugangPruefen()
+  if (zugang.art !== 'da') {
     return Response.json(
-      { fehler: 'Der Coach ist nicht eingerichtet. ANTHROPIC_API_KEY fehlt.' },
+      {
+        fehler:
+          zugang.art === 'fehlt'
+            ? `Der Coach ist nicht eingerichtet. ${TOKEN_VARIABLE} fehlt.`
+            : zugang.grund,
+      },
       { status: 503 },
     )
   }

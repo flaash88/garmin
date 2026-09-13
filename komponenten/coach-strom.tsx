@@ -24,6 +24,12 @@ interface Nachricht {
   zeit: string
   werkzeuge: Werkzeugzeile[]
   fehler: string | null
+  /**
+   * Abgelaufener oder fehlender Zugang. Eigener Zustand, weil er eine andere
+   * Handlung verlangt als ein Netzausfall: nicht «Erneut», sondern einen
+   * neuen Token.
+   */
+  zugang: string | null
 }
 
 function Werkzeug({ z }: { z: Werkzeugzeile }) {
@@ -72,8 +78,8 @@ export function CoachStrom() {
 
     setVerlauf((v) => [
       ...v,
-      { rolle: 'du', text: frage, zeit: jetzt(), werkzeuge: [], fehler: null },
-      { rolle: 'coach', text: '', zeit: jetzt(), werkzeuge: [], fehler: null },
+      { rolle: 'du', text: frage, zeit: jetzt(), werkzeuge: [], fehler: null, zugang: null },
+      { rolle: 'coach', text: '', zeit: jetzt(), werkzeuge: [], fehler: null, zugang: null },
     ])
     setEingabe('')
     setLaeuft(true)
@@ -104,6 +110,21 @@ export function CoachStrom() {
           if (typeof koerper.fehler === 'string') grund = koerper.fehler
         } catch {
           /* Kein brauchbarer Körper — dann bleibt es beim Statuscode. */
+        }
+        if (antwort.status === 503 || antwort.status === 401) {
+          // Zugang fehlt oder ist abgelaufen — kein allgemeiner Fehler.
+          setVerlauf((v) => {
+            const neu = [...v]
+            const l = neu.at(-1)
+            if (l) {
+              neu[neu.length - 1] = {
+                ...l,
+                zugang: grund ?? 'Zugang abgelaufen — Token neu erzeugen',
+              }
+            }
+            return neu
+          })
+          return
         }
         throw new Error(grund ?? `Der Coach antwortet nicht (${antwort.status}).`)
       }
@@ -155,7 +176,12 @@ export function CoachStrom() {
       const letzte = neu.at(-1)
       if (!letzte) return v
 
-      if (e['art'] === 'fehler' && typeof e['text'] === 'string') {
+      if (e['art'] === 'zugang') {
+        neu[neu.length - 1] = {
+          ...letzte,
+          zugang: typeof e['text'] === 'string' ? e['text'] : 'Zugang abgelaufen',
+        }
+      } else if (e['art'] === 'fehler' && typeof e['text'] === 'string') {
         neu[neu.length - 1] = { ...letzte, fehler: e['text'] }
       } else if (e['art'] === 'text' && typeof e['text'] === 'string') {
         neu[neu.length - 1] = { ...letzte, text: letzte.text + e['text'] }
@@ -218,7 +244,11 @@ export function CoachStrom() {
                   </div>
                 ) : null}
 
-                {n.text.length === 0 && n.fehler === null && laeuft && i === verlauf.length - 1 ? (
+                {n.text.length === 0 &&
+                n.fehler === null &&
+                n.zugang === null &&
+                laeuft &&
+                i === verlauf.length - 1 ? (
                   <p className="mt-3 font-mono text-[11.5px] text-text-schwach">
                     Der Coach sieht sich deine Daten an …
                   </p>
@@ -231,6 +261,32 @@ export function CoachStrom() {
                       <span className="ml-0.5 inline-block h-[1.1em] w-[2px] animate-pulse bg-akzent align-text-bottom" />
                     ) : null}
                   </p>
+                ) : null}
+
+                {n.zugang ? (
+                  <div
+                    className="mt-3 border border-warnung bg-flaeche p-4"
+                    role="alert"
+                  >
+                    <div className="flex items-center gap-[9px]">
+                      <span className="size-1.5 flex-none rounded-full bg-warnung" />
+                      <span className="marke text-[10px] text-warnung">
+                        Zugang abgelaufen
+                      </span>
+                    </div>
+                    <p className="mt-2.5 text-[13px] leading-relaxed text-text">
+                      {n.zugang}
+                    </p>
+                    <p className="mt-3 font-mono text-[11.5px] leading-relaxed text-text-schwach">
+                      Neuen Token erzeugen und in{' '}
+                      <code className="text-text-leise">.env</code> eintragen:
+                      <br />
+                      <code className="text-text-leise">claude setup-token</code>
+                      <br />
+                      Danach den Dienst neu starten. Alles außer dem Coach läuft
+                      weiter.
+                    </p>
+                  </div>
                 ) : null}
 
                 {n.fehler ? (

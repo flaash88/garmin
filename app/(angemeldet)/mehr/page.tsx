@@ -23,7 +23,8 @@ export default async function Mehr() {
    */
   const schluesselDa = Boolean(process.env['ICU_API_KEY'])
   const athlet = process.env['ICU_ATHLET_ID'] ?? null
-  const anthropicDa = Boolean(process.env['ANTHROPIC_API_KEY'])
+  const { zugangPruefen } = await import('@/lib/coach/zugang')
+  const coachZugang = zugangPruefen()
 
   return (
     <div className="space-y-5 p-5 md:p-6">
@@ -66,9 +67,19 @@ export default async function Mehr() {
           <div>
             <dt className="marke text-[9px] text-text-schwach">Coach</dt>
             <dd
-              className={`mt-1.5 font-mono text-[12.5px] ${anthropicDa ? 'text-positiv' : 'text-text-schwach'}`}
+              className={`mt-1.5 font-mono text-[12.5px] ${
+                coachZugang.art === 'da'
+                  ? 'text-positiv'
+                  : coachZugang.art === 'unbrauchbar'
+                    ? 'text-negativ'
+                    : 'text-text-schwach'
+              }`}
             >
-              {anthropicDa ? 'hinterlegt' : 'fehlt'}
+              {coachZugang.art === 'da'
+                ? 'Token hinterlegt'
+                : coachZugang.art === 'unbrauchbar'
+                  ? 'Token unbrauchbar'
+                  : 'Token fehlt'}
             </dd>
           </div>
           <div>
@@ -94,9 +105,21 @@ export default async function Mehr() {
           </button>
         </form>
 
+        {coachZugang.art === 'da' ? null : (
+          <p className="mt-4 border-t border-kontur pt-3 font-mono text-[11px] leading-relaxed text-text-leise">
+            {coachZugang.art === 'unbrauchbar' ? `${coachZugang.grund}` : null}
+            {coachZugang.art === 'fehlt'
+              ? 'Der Coach läuft über das Claude-Code-Abo. Token erzeugen mit '
+              : ' Neu erzeugen mit '}
+            <code className="text-text-stark">claude setup-token</code>, in{' '}
+            <code className="text-text-stark">.env</code> eintragen, Dienst neu
+            starten.
+          </p>
+        )}
+
         <p className="mt-3 font-mono text-[10.5px] leading-relaxed text-text-schwach">
-          Die Schlüssel stehen in der Datei <code>.env</code> auf dem Server und
-          werden nie an den Browser gegeben.
+          Schlüssel und Token stehen in der Datei <code>.env</code> auf dem
+          Server und werden nie an den Browser gegeben.
         </p>
       </Kachel>
 

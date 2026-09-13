@@ -12,6 +12,7 @@
  */
 import { abgleichLaufen } from '@/lib/abgleich/lauf'
 import { briefingBeiBedarf } from '@/lib/coach/analysen'
+import { istZugangsfehler, startmeldung, zugangPruefen } from '@/lib/coach/zugang'
 
 const STUNDE_MS = 60 * 60 * 1000
 const ABGLEICH_ALLE_MS = STUNDE_MS
@@ -41,11 +42,34 @@ async function abgleichen(): Promise<void> {
 }
 
 async function briefen(): Promise<void> {
-  if (!process.env['ANTHROPIC_API_KEY']) return
+  const zugang = zugangPruefen()
+  if (zugang.art !== 'da') {
+    melden(
+      zugang.art === 'fehlt'
+        ? 'Wochenbriefing übersprungen: kein Coach-Zugang hinterlegt.'
+        : `Wochenbriefing übersprungen: ${zugang.grund}`,
+    )
+    return
+  }
+
   try {
     const erzeugt = await briefingBeiBedarf()
     melden(erzeugt ? 'Wochenbriefing erzeugt.' : 'Wochenbriefing liegt schon vor.')
   } catch (fehler) {
+    /*
+     * Ein abgelaufener Token darf den Zeitplan nicht anhalten. Er wird
+     * ausdrücklich benannt — an einem allgemeinen «fehlgeschlagen» sieht
+     * niemand, dass ein neuer Token nötig ist — und beim nächsten Lauf
+     * erneut versucht. Das Briefing ist noch nicht abgelegt, also holt der
+     * nächste Lauf es von selbst nach.
+     */
+    if (istZugangsfehler(fehler)) {
+      melden(
+        'Wochenbriefing: Zugang abgelaufen — Token neu erzeugen ' +
+          '(claude setup-token). Nächster Versuch beim nächsten Lauf.',
+      )
+      return
+    }
     melden(
       `Wochenbriefing fehlgeschlagen: ${fehler instanceof Error ? fehler.message : 'unbekannt'}`,
     )
@@ -53,6 +77,11 @@ async function briefen(): Promise<void> {
 }
 
 melden('Zeitplan gestartet. Abgleich stündlich, Briefing täglich geprüft.')
+
+// Beim Hochfahren sagen, woran es fehlt — nicht erst beim ersten Versuch.
+const startText = startmeldung()
+if (startText) for (const zeile of startText.split('\n')) melden(zeile)
+else melden('Coach-Zugang liegt vor.')
 
 // Einmal gleich zu Beginn, damit ein Neustart nicht eine Stunde kostet.
 void abgleichen()

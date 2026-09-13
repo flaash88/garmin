@@ -16,7 +16,8 @@ ausschließlich Deutsch.
 - **Plan**, gelesen aus dem Kalender von intervals.icu.
 - **Strecken**, selbst erkannt aus den Verläufen.
 - **Coach**: freier Chat über die eigenen Daten, dazu ein Wochenbriefing,
-  das einmal wöchentlich entsteht.
+  das einmal wöchentlich entsteht. Läuft über das eigene Claude-Code-Abo,
+  nicht über einen API-Schlüssel.
 
 ---
 
@@ -56,6 +57,36 @@ Die ausgegebene Zeile nach `.env` übernehmen.
 
 Den Schlüssel für intervals.icu gibt es dort unter **Einstellungen →
 Developer**. Die Athleten-ID steht in der Adresszeile, sie beginnt mit `i`.
+
+### Zugang für den Coach
+
+Der Coach läuft über das eigene **Claude-Code-Abo**, nicht über einen
+API-Schlüssel. Der Token wird **interaktiv** erzeugt — der Befehl öffnet den
+Browser zur Anmeldung:
+
+```
+claude setup-token
+```
+
+Der ausgegebene Wert beginnt mit `sk-ant-oat01-` und kommt nach
+`CLAUDE_CODE_OAUTH_TOKEN` in `.env`.
+
+Der Token **gehört nicht in das Abbild**. Er wird nirgends im `Dockerfile`
+genannt und liegt in keiner Ebene; er kommt über die Umgebung herein, die
+`docker compose` aus `.env` füllt, und geht von dort als eine von zehn
+Variablen an den Unterprozess des Coach. Ein Abbild, das gebaut wurde, lässt
+sich ohne Weiteres weitergeben — was darin steckt, ist dauerhaft darin.
+
+`ANTHROPIC_API_KEY` wird **nicht** gesetzt, auch nicht zusätzlich: das SDK
+führt beide Variablen in derselben Gruppe, und sind beide gesetzt, hängt an
+der Reihenfolge, welches Konto die Nutzung trägt.
+
+**Läuft der Token ab**, sagt Takt das an drei Stellen deutlich: der Coach
+zeigt einen eigenen Zustand statt eines allgemeinen Fehlers, „Mehr" meldet
+den Stand des Tokens, und der Zeitplan schreibt es ins Protokoll und versucht
+es beim nächsten Lauf erneut, statt hängenzubleiben. Neuen Token erzeugen,
+in `.env` eintragen, `docker compose up -d` — alles außer dem Coach läuft
+durchgehend weiter.
 
 ### 2. Verbund starten
 
@@ -221,6 +252,14 @@ curl https://<deine-adresse>/api/health
 Antwortet ohne Anmeldung mit `{"zustand":"ok","zeit":"…"}`. Der Endpunkt
 verrät nichts über den Stand der Daten. Der Verbund nutzt denselben Pfad für
 seinen eigenen Test.
+
+Beim Hochfahren schreibt Takt zusätzlich in das Protokoll, was fehlt — der
+Coach-Zugang und die drei Pflichtwerte. Ein fehlender Token fällt damit beim
+Start auf und nicht erst, wenn jemand den Coach zum ersten Mal anspricht:
+
+```
+docker compose logs takt | head
+```
 
 ---
 

@@ -67,7 +67,7 @@ services:
       TAKT_IP_KOPF: ${TAKT_IP_KOPF:-cf-connecting-ip}
       ICU_API_KEY: ${ICU_API_KEY:-}
       ICU_ATHLET_ID: ${ICU_ATHLET_ID:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       TZ: ${TZ:-Europe/Vienna}
     # Kein Port nach außen: der Tunnel spricht den Dienst im Verbund an.
     # Zum Ausprobieren ohne Tunnel die nächsten zwei Zeilen einkommentieren.
@@ -89,7 +89,7 @@ services:
       TAKT_SQL_ROLLE_URL: ${TAKT_COACH_PASSWORT:+postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}}
       ICU_API_KEY: ${ICU_API_KEY:-}
       ICU_ATHLET_ID: ${ICU_ATHLET_ID:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       TZ: ${TZ:-Europe/Vienna}
 
   sicherung:

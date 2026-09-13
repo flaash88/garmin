@@ -5,6 +5,7 @@ import {
   type CanUseTool,
 } from '@anthropic-ai/claude-agent-sdk'
 import { athletenprofil } from './profil'
+import { istZugangsfehler, startmeldung, TOKEN_VARIABLE, zugangPruefen } from './zugang'
 import {
   FORMEN,
   werkzeugAktivitaeten,
@@ -200,7 +201,14 @@ export function nurEigeneWerkzeuge(
  */
 export function saubereUmgebung(): Record<string, string | undefined> {
   const durchreichen = [
-    'ANTHROPIC_API_KEY',
+    /*
+     * Der Zugang läuft über das Claude-Code-Abo, nicht über einen
+     * API-Schlüssel. ANTHROPIC_API_KEY steht bewusst **nicht** in dieser
+     * Liste: das SDK führt beide Variablen in derselben Gruppe, und sind
+     * beide gesetzt, hängt an der Reihenfolge, welches Konto die Nutzung
+     * trägt. Siehe DECISIONS.md, E7.1.
+     */
+    TOKEN_VARIABLE,
     'ANTHROPIC_BASE_URL',
     'PATH',
     'HOME',
@@ -221,7 +229,11 @@ export function saubereUmgebung(): Record<string, string | undefined> {
 }
 
 export interface CoachEreignis {
-  art: 'text' | 'werkzeug' | 'ende' | 'fehler'
+  /**
+   * `zugang` ist ein eigener Zustand, kein allgemeiner Fehler: ein
+   * abgelaufener Token braucht eine andere Handlung als ein Netzausfall.
+   */
+  art: 'text' | 'werkzeug' | 'ende' | 'fehler' | 'zugang'
   text?: string
   id?: string
   beschriftung?: string
@@ -241,10 +253,14 @@ export async function* coachFragen(
   verlauf: Array<{ rolle: 'du' | 'coach'; text: string }> = [],
   abgewiesenMelden?: (name: string) => void,
 ): AsyncGenerator<CoachEreignis> {
-  if (!process.env['ANTHROPIC_API_KEY']) {
+  const zugang = zugangPruefen()
+  if (zugang.art !== 'da') {
     yield {
-      art: 'fehler',
-      text: 'Der Coach ist nicht eingerichtet. ANTHROPIC_API_KEY fehlt.',
+      art: 'zugang',
+      text:
+        zugang.art === 'fehlt'
+          ? `Der Coach ist nicht eingerichtet. ${TOKEN_VARIABLE} fehlt.`
+          : zugang.grund,
     }
     return
   }
@@ -262,6 +278,8 @@ export async function* coachFragen(
     : frage
 
   let gemeldet = 0
+  /** Ob in diesem Zug schon echter Antworttext kam. */
+  let textGesehen = false
 
   try {
     const strom = query({
@@ -318,15 +336,41 @@ export async function* coachFragen(
 
       if (nachricht.type === 'assistant') {
         for (const block of nachricht.message.content) {
-          if (block.type === 'text' && block.text.length > 0) {
-            yield { art: 'text', text: block.text }
+          if (block.type !== 'text' || block.text.length === 0) continue
+
+          /*
+           * Das SDK reicht einen Authentifizierungsfehler als ganz gewöhnlichen
+           * Antworttext durch — englisch, etwa «Failed to authenticate. API
+           * Error: 401 OAuth access token is invalid.» Ungefiltert stünde das
+           * in der Sprechblase, vor dem richtigen deutschen Zustand, und wäre
+           * obendrein eine englische Zeichenkette in der Oberfläche.
+           *
+           * Geprüft wird nur, **solange noch kein echter Text kam**: eine
+           * lange Antwort, die beiläufig «401» erwähnt, soll nicht
+           * abgeschnitten werden.
+           */
+          if (!textGesehen && istZugangsfehler(block.text)) {
+            yield { art: 'zugang', text: 'Zugang abgelaufen — Token neu erzeugen' }
+            return
           }
+
+          textGesehen = true
+          yield { art: 'text', text: block.text }
         }
       } else if (nachricht.type === 'result') {
         if (nachricht.subtype !== 'success') {
-          yield {
-            art: 'fehler',
-            text: `Der Coach hat abgebrochen (${nachricht.subtype}).`,
+          /*
+           * Der Abbruchgrund trägt die Meldung der Gegenseite. Ist der
+           * Zugang schuld, gehört das nicht in einen allgemeinen Fehler.
+           */
+          const grund = 'result' in nachricht ? String(nachricht.result ?? '') : ''
+          if (istZugangsfehler(grund) || istZugangsfehler(nachricht.subtype)) {
+            yield { art: 'zugang', text: 'Zugang abgelaufen — Token neu erzeugen' }
+          } else {
+            yield {
+              art: 'fehler',
+              text: `Der Coach hat abgebrochen (${nachricht.subtype}).`,
+            }
           }
         }
       }
@@ -348,9 +392,24 @@ export async function* coachFragen(
 
     yield { art: 'ende' }
   } catch (fehler) {
+    if (istZugangsfehler(fehler)) {
+      yield { art: 'zugang', text: 'Zugang abgelaufen — Token neu erzeugen' }
+      return
+    }
     yield {
       art: 'fehler',
       text: fehler instanceof Error ? fehler.message : 'Unbekannter Fehler',
     }
   }
+}
+
+/**
+ * Prüfung beim Hochfahren. Schreibt ins Protokoll, wenn der Zugang fehlt oder
+ * unbrauchbar ist — damit es beim Start auffällt und nicht erst, wenn jemand
+ * den Coach zum ersten Mal anspricht.
+ */
+export function zugangBeimStartPruefen(): void {
+  const meldung = startmeldung()
+  if (meldung) console.warn(`[takt] ${meldung}`)
+  else console.log('[takt] Coach-Zugang liegt vor.')
 }

@@ -11,9 +11,6 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.270
         version: 0.3.270(@anthropic-ai/sdk@0.125.0(zod@4.6.4))(@modelcontextprotocol/sdk@1.30.0(zod@4.6.4))(zod@4.6.4)
-      '@anthropic-ai/sdk':
-        specifier: 0.125.0
-        version: 0.125.0(zod@4.6.4)
       '@node-rs/argon2':
         specifier: ^2.2.1
         version: 2.2.1
