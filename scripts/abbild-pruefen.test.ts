@@ -20,11 +20,21 @@ const COMPOSE = `services:
   wanderung:
     # Dieser Kommentar nennt datenbank/gibt-es-nicht.sh und zählt nicht.
     command: ['sh', 'datenbank/hochfahren.sh']
-  sicherung:
-    image: postgres:16-alpine
+  zweiter:
+    command:
+      - sh
+      - -c
+      - |
+        for datei in datenbank/sicherung.sh; do
+          [ -e "\$\$datei" ] || exit 1
+        done
+
+        exec sh datenbank/sicherung.sh
+  fremd:
+    image: cloudflare/cloudflared:latest
     entrypoint: ['/bin/sh', '/sicherung.sh']
     volumes:
-      - ./datenbank/sicherung.sh:/sicherung.sh:ro
+      - ./vorbau/nginx.conf:/etc/nginx/nginx.conf:ro
       - sicherung:/sicherung/drizzle/meta
       - datenbank:/var/lib/postgresql/data
     environment:
@@ -90,11 +100,37 @@ describe('abbild-pruefen.sh', () => {
     expect(e.text).toContain('unvollständig')
   })
 
-  it('scheitert auch an einer eingehaengten Datei', () => {
+  it('scheitert an einer Datei aus einem Blockbefehl', () => {
     const w = baum(['datenbank/hochfahren.sh'])
     const e = pruefen(w)
     expect(e.code).toBe(1)
     expect(e.text).toContain('datenbank/sicherung.sh')
+  })
+
+  it('verlangt keine Einhaengung vom Wirt im Abbild', () => {
+    /*
+     * `./vorbau/nginx.conf` wird vom Wirt in ein fremdes Abbild gehängt. Sie
+     * hier zu verlangen hiesse, den Bau an einer Datei scheitern zu lassen,
+     * die in diesem Abbild nie liegen sollte.
+     */
+    const w = baum(['datenbank/hochfahren.sh', 'datenbank/sicherung.sh'])
+    const e = pruefen(w)
+    expect(e.code).toBe(0)
+    expect(e.text).not.toContain('nginx.conf')
+  })
+
+  it('haelt eine Abbildmarke aus einer Registry nicht fuer einen Pfad', () => {
+    // `cloudflare/cloudflared:latest` sieht aus wie ein Pfad und ist keiner.
+    const w = baum(['datenbank/hochfahren.sh', 'datenbank/sicherung.sh'])
+    expect(pruefen(w).text).not.toContain('cloudflared')
+  })
+
+  it('laesst Satzzeichen der Shell nicht am Dateinamen kleben', () => {
+    // `…sicherung.sh; do` — das Semikolon gehoert nicht zum Namen.
+    const w = baum(['datenbank/hochfahren.sh', 'datenbank/sicherung.sh'])
+    const e = pruefen(w)
+    expect(e.code).toBe(0)
+    expect(e.text).not.toContain('sicherung.sh;')
   })
 
   it('nennt alle fehlenden Dateien, nicht nur die erste', () => {
@@ -191,10 +227,14 @@ describe('abbild-pruefen.sh', () => {
   it('schlaegt Alarm, wenn gar kein Pfad mehr gefunden wird', () => {
     // Eine Prüfung, die nichts prüft, ist keine — das darf nicht als
     // «vollständig» durchgehen, wenn das Einsammeln einmal nicht mehr greift.
+    // Auch nicht, wenn das Dockerfile eigene Pfade mitgibt: die sind immer da
+    // und würden die Warnung sonst nie auslösen.
     const wurzel = mkdtempSync(join(tmpdir(), 'takt-abbild-'))
     baeume.push(wurzel)
     writeFileSync(join(wurzel, 'docker-compose.yml'), 'services:\n  a:\n    image: x\n')
-    const e = pruefen(wurzel)
+    mkdirSync(join(wurzel, 'scripts'), { recursive: true })
+    writeFileSync(join(wurzel, 'scripts/zeitplan.ts'), '')
+    const e = pruefen(wurzel, 'scripts/zeitplan.ts')
     expect(e.code).toBe(1)
     expect(e.text).toContain('kein einziger Pfad')
   })

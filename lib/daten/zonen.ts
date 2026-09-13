@@ -39,8 +39,14 @@ export async function alleZonensaetze(): Promise<Zonensatz[]> {
  * Die Sätze zu Gruppen zusammengefasst, Laufen zuerst.
  *
  * Eine Zeile je Sportart ist richtig zum Nachschlagen und falsch zum
- * Anzeigen: aus vier gelieferten Sätzen werden leicht zwölf Zeilen, die
- * dreimal dasselbe sagen. Angezeigt wird deshalb die Gruppe.
+ * Anzeigen: aus vier gelieferten Sätzen werden zwölf Zeilen, die dreimal
+ * dasselbe sagen. Angezeigt wird deshalb die Gruppe.
+ *
+ * Gruppiert wird nach der **gelieferten** Gruppe, nicht nach gleichen Werten.
+ * Mit den echten Daten des Athleten tragen «Swim, OpenWaterSwim» und «Other»
+ * dieselben Grenzen; nach Werten zusammengefasst wären sie zu einer Zeile
+ * «OpenWaterSwim, Other, Swim» verschmolzen und hätten drei Sätze behauptet,
+ * wo intervals.icu vier führt.
  */
 export interface Zonengruppe {
   sportarten: string[]
@@ -49,17 +55,31 @@ export interface Zonengruppe {
 
 const ZUERST = ['Run', 'VirtualRun', 'TrailRun']
 
+function gruppeAls(wert: unknown): string[] | null {
+  if (!Array.isArray(wert)) return null
+  const namen = wert.filter((z): z is string => typeof z === 'string' && z.length > 0)
+  return namen.length > 0 ? namen : null
+}
+
 export function zuGruppen(saetze: readonly Zonensatz[]): Zonengruppe[] {
   const nach = new Map<string, Zonengruppe>()
 
   for (const satz of saetze) {
-    const gruppe = grenzenText(satz)
-    const vorhanden = nach.get(gruppe)
+    const gruppe = gruppeAls(satz.gruppe)
+    /*
+     * Ohne hinterlegte Gruppe steht die Sportart für sich. Das trifft
+     * Zeilen, die vor der Umstellung angelegt wurden — sie sollen sichtbar
+     * bleiben, nicht wegfallen.
+     */
+    const schluessel = gruppe ? gruppe.join('\u0000') : `einzeln:${satz.sportart}`
+    const vorhanden = nach.get(schluessel)
     if (vorhanden) vorhanden.sportarten.push(satz.sportart)
-    else nach.set(gruppe, { sportarten: [satz.sportart], satz })
+    else nach.set(schluessel, { sportarten: [satz.sportart], satz })
   }
 
   const gruppen = [...nach.values()]
+  for (const g of gruppen) g.sportarten.sort()
+
   // Laufen zuerst: Takt ist eine Laufanalyse, und was oben steht, wird
   // gelesen.
   gruppen.sort((a, b) => {
@@ -69,14 +89,4 @@ export function zuGruppen(saetze: readonly Zonensatz[]): Zonengruppe[] {
     return (a.sportarten[0] ?? '').localeCompare(b.sportarten[0] ?? '')
   })
   return gruppen
-}
-
-/** Schlüssel, unter dem zwei Sätze als «dieselben Werte» gelten. */
-function grenzenText(satz: Zonensatz): string {
-  return JSON.stringify([
-    satz.schwellenPuls,
-    satz.maxPuls,
-    satz.schwellenPaceSekundenJeKm,
-    satz.pulsGrenzen,
-  ])
 }

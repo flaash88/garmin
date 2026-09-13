@@ -107,7 +107,7 @@ Greift die Suche einmal daneben, lässt sich der Pfad in
 zeigt einen eigenen Zustand statt eines allgemeinen Fehlers, „Mehr" meldet
 den Stand des Tokens, und der Zeitplan schreibt es ins Protokoll und versucht
 es beim nächsten Lauf erneut, statt hängenzubleiben. Neuen Token erzeugen,
-in `.env` eintragen, `docker compose up -d` — alles außer dem Coach läuft
+in `.env` eintragen, `docker compose up -d --build` — alles außer dem Coach läuft
 durchgehend weiter.
 
 ### 2. Verbund starten

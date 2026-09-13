@@ -31,7 +31,13 @@ if [ ! -f "$compose" ]; then
   exit 1
 fi
 
-# Pfade einsammeln.
+# Pfade einsammeln — nur aus `command:` und `entrypoint:`.
+#
+# Das ist die Einschränkung, auf die es ankommt: nur diese laufen **im
+# Abbild**. Einhängungen unter `volumes:` kommen vom Wirt, und `image:` nennt
+# eine Marke in einer Registry — `cloudflare/cloudflared:latest` sähe sonst
+# aus wie ein Pfad und liesse den Bau an einer Datei scheitern, die es hier
+# nie geben sollte.
 #
 # Zerlegt wird in **ganze Felder** an Leerzeichen und Kommas, nicht mit einem
 # Muster mitten im Text: sonst würde aus `sicherung:/sicherung/drizzle/meta`
@@ -44,12 +50,18 @@ fi
 # keine Variable.
 pfade=$(
   awk '
-    { sub(/[ \t]#.*$/, ""); sub(/^[ \t]*#.*$/, "") }
-    {
-      n = split($0, felder, /[ \t,]+/)
+    function einzug(zeile,   i) {
+      i = match(zeile, /[^ \t]/)
+      return i == 0 ? -1 : i - 1
+    }
+    function felder(text,   n, teile, i, f, p) {
+      n = split(text, teile, /[ \t,]+/)
       for (i = 1; i <= n; i++) {
-        f = felder[i]
+        f = teile[i]
         gsub(/^[\[\{"'"'"']+|[\]\}"'"'"']+$/, "", f)
+        # Satzzeichen der Shell an den Rändern: `…schema.sql;` und `…sh \`
+        # stehen so in einem Blocktext und sind keine Dateinamen.
+        gsub(/^[;&|\\]+|[;&|\\]+$/, "", f)
         if (f == "") continue
         # Adressen sind keine Pfade: postgres://…@datenbank:5432/takt
         if (index(f, "://") > 0) continue
@@ -65,11 +77,41 @@ pfade=$(
         print f
       }
     }
+    {
+      zeile = $0
+      sub(/[ \t]#.*$/, "", zeile)
+      sub(/^[ \t]*#.*$/, "", zeile)
+      # Leerzeilen stehen mitten in Blocktexten — Zustand behalten.
+      if (zeile ~ /^[ \t]*$/) next
+
+      ein = einzug(zeile)
+
+      if (match(zeile, /^[ \t]*(command|entrypoint)[ \t]*:/)) {
+        imBefehl = 1
+        befehlEin = ein
+        felder(substr(zeile, RLENGTH + 1))
+        next
+      }
+      if (imBefehl) {
+        if (ein > befehlEin) { felder(zeile); next }
+        imBefehl = 0
+      }
+    }
   ' "$compose" | sort -u
 )
 
 fehlend=''
 geprueft=0
+# Getrennt gezählt: die Pfade auf der Befehlszeile kommen aus dem Dockerfile
+# und sind immer da. Zählten sie mit, könnte die Warnung «kein einziger Pfad»
+# aus einem echten Bau nie kommen — und sie ist genau für den Fall gedacht,
+# dass das Einsammeln einmal nicht mehr greift.
+ausCompose=0
+
+for pfad in $pfade; do
+  [ -n "$pfad" ] || continue
+  ausCompose=$((ausCompose + 1))
+done
 
 for pfad in $pfade "$@"; do
   [ -n "$pfad" ] || continue
@@ -79,8 +121,9 @@ for pfad in $pfade "$@"; do
   fi
 done
 
-if [ "$geprueft" -eq 0 ]; then
+if [ "$ausCompose" -eq 0 ]; then
   echo "FEHLER: In $compose steht kein einziger Pfad, der geprüft werden könnte." >&2
+  echo "  Erwartet wird mindestens einer in einem command: oder entrypoint:." >&2
   echo "  Entweder ist die Datei leer, oder das Einsammeln greift nicht mehr." >&2
   echo "  Eine Prüfung, die nichts prüft, ist keine." >&2
   exit 1

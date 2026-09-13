@@ -2131,6 +2131,11 @@ am vermuteten namentlichen Kopieren kritisiert hat: sie altert mit jeder
 neuen Datei. Dafür kommt die `docker-compose.yml` mit ins Abbild — nicht zum
 Ausführen, sondern damit die Prüfung weiß, wonach sie sucht.
 
+Gelesen werden nur `command:` und `entrypoint:` — die laufen im Abbild.
+Einhängungen unter `volumes:` kommen vom Wirt und haben im Abbild nichts zu
+suchen; `image:` nennt eine Marke in einer Registry, und
+`cloudflare/cloudflared:latest` sähe sonst aus wie ein Pfad.
+
 Zerlegt wird in **ganze Felder** an Leerzeichen und Kommas, nicht mit einem
 Muster mitten im Text. Das ist der Unterschied zwischen einer Prüfung, die
 trägt, und einer, die nervt: aus `sicherung:/sicherung/drizzle/meta` würde
@@ -2149,7 +2154,7 @@ gibt keinen Docker-Daemon in dieser Umgebung. Geprüft wurde deshalb gegen
 nachgebaute Abbildbäume, darunter der echte Fall: der Dateibestand aus
 `git archive a79732b datenbank` neben der heutigen `docker-compose.yml`. Die
 Prüfung endet dort mit Rückgabewert 1 und nennt `datenbank/hochfahren.sh`.
-Dazu siebzehn Tests in `scripts/abbild-pruefen.test.ts`, die genau diese
+Dazu zwanzig Tests in `scripts/abbild-pruefen.test.ts`, die genau diese
 Bäume aufbauen.
 
 Dass der Bau in einem echten Docker-Lauf abbricht, ist damit **nicht**
@@ -2204,3 +2209,113 @@ werden jetzt alle vier. Gegen drei nachgebaute Abbildstände durchgespielt.
 **Eine Zeile im Protokoll nannte noch den Tunnel.** `app/anmeldung/aktionen.ts`
 riet bei Klartext-HTTP zum «Tunnel aus Phase 6» — den es nicht mehr gibt.
 Jetzt: «davor gehört ein Vorbau, der es liefert.»
+
+## Phase 14 — Die echte Antwort, geprüft
+
+### E14.1 — Vier Sätze herein, zwölf Zeilen hinaus
+
+Der Athlet hat die rohe Antwort geliefert und dazu geschrieben: *«Damit
+sollte der Abgleich vier Zeilen in zonen schreiben.»* Er schreibt **zwölf**,
+und das ist Absicht — aber es gehört gesagt, nicht stillschweigend geliefert.
+
+Die vier Sätze führen zusammen zwölf Sportarten:
+
+| Gruppe | Sportarten | lthr | max | Grenzen |
+| --- | --- | --- | --- | --- |
+| Rad | Ride, VirtualRide, MountainBikeRide, GravelRide, TrackRide, Cyclocross | 200 | 220 | 161/179/187/199/205/211/220 |
+| Lauf | Run, VirtualRun, TrailRun | 165 | 196 | 130/148/162/177/184/192/196 |
+| Schwimmen | Swim, OpenWaterSwim | 200 | 220 | 169/179/189/199/205/211/220 |
+| Sonstiges | Other | 200 | 220 | 169/179/189/199/205/211/220 |
+
+Der Grund für die Auflösung steht in der Forderung selbst: *«Für Läufe muss
+der Run-Eintrag gezogen werden.»* Der Primärschlüssel ist die Sportart. Eine
+Aktivität vom Typ `TrailRun` findet ihre Zeile unter ihrem eigenen Namen —
+ohne dass irgendwo eine Liste stünde, welche Sportart zu welcher Gruppe
+gehört, und ohne eine Suche im JSON-Feld. Die gelieferte Gruppe steht an
+jeder Zeile; **angezeigt** wird sie, nicht die zwölf Einzelzeilen.
+
+Vier Zeilen wären auch machbar, mit einem anderen Schlüssel und einer Suche
+im Gruppenfeld. Das ist eine Entscheidung des Athleten, keine des Codes —
+gefragt ist sie in der Antwort auf diese Runde.
+
+### E14.2 — `threshold_pace: null` kostet keinen Satz
+
+In der echten Antwort sind `threshold_pace`, `pace_zones`, `pace_units` und
+`pace_zone_names` durchweg `null`: kein Schwellentempo hinterlegt. Der
+Umwandler zieht die Sportarten aus `types` und nimmt alles andere als
+wahlfrei — der Satz bleibt, die Pace bleibt `null`, und es entsteht keine
+erfundene Zahl. Die Umrechnung aus E12.2 wartet, bis es etwas umzurechnen
+gibt.
+
+`ftp`, `power_zones` und `power_zone_names` bekommen keine eigene Spalte —
+Takt wertet Laufen aus. Weggeworfen werden sie trotzdem nicht: der Rohsatz
+liegt vollständig in `rohdaten`.
+
+Die Antwort liegt jetzt als `lib/icu/proben/sport-settings.json` im Repo, und
+zwölf Tests in `lib/abgleich/sport-settings-echt.test.ts` arbeiten gegen sie
+— darunter die Gegenprobe, dass der alte Fehler (`type` statt `types`) heute
+einen benannten Leerbefund ergäbe statt einer Null.
+
+`pnpm zonen-probe` nimmt diese Ablage, wenn keine Zugangsdaten gesetzt sind,
+und sagt dazu, dass es der abgelegte Stand ist und nicht der Abruf von jetzt.
+Ist nur **einer** der beiden Werte gesetzt, bricht es ab: dann wollte jemand
+den echten Abruf und hat sich vertan, und ein stiller Rückfall auf die Ablage
+sähe aus wie ein geglückter Abruf.
+
+### E14.3 — Gruppiert wird nach der gelieferten Gruppe, nicht nach gleichen Werten
+
+An den echten Daten fiel auf, was an den nachgebauten nicht auffallen konnte:
+«Swim, OpenWaterSwim» und «Other» tragen dieselben Grenzen. Die Anzeige fasste
+nach **Werten** zusammen und machte daraus eine Zeile «OpenWaterSwim, Other,
+Swim» — drei Sätze behauptet, wo intervals.icu vier führt.
+
+Jetzt wird nach der gelieferten Gruppe zusammengefasst. Das Athletenprofil
+zeigt vier Zeilen, Laufen zuerst, wie die Antwort sie führt.
+
+### E14.4 — Gegen den laufenden Dienst geprüft
+
+Dieselbe Pulsreihe — zehn Minuten bei 126, dreißig bei 170, zwanzig bei 140 —
+einmal als `Run`, einmal als `Ride` abgelegt und beide Seiten aufgerufen:
+
+```
+PROBE-lauf  (Run)   lthr 165  max 196
+   Z1 Recovery      ≤130        10:00  16.7 %
+   Z2 Aerobic       131–148     20:00  33.3 %
+   Z4 SubThreshold  163–177     30:00  50.0 %
+
+PROBE-rad   (Ride)  lthr 200  max 220
+   Z1 Recovery      ≤161        30:00  50.0 %
+   Z2 Aerobic       162–179     30:00  50.0 %
+```
+
+Dieselben Messwerte, zwei Verteilungen. Die dreißig Minuten, die im Lauf an
+der Schwelle liegen, sind auf dem Rad lockeres Fahren. Genau darum ging es.
+Die Zonennamen kommen aus `hr_zone_names`, nicht aus einer eigenen Liste.
+
+### E14.5 — Befunde der Durchsicht
+
+Fünf Stellen, vier davon an der Bauprüfung aus Phase 13:
+
+**Eine Abbildmarke ist kein Pfad.** `cloudflare/cloudflared:latest` wurde als
+Datei gelesen und hätte den Bau scheitern lassen — ausgerechnet an dem Dienst,
+den Phase 13 entfernt hat. Ebenso jede Marke aus einer Registry
+(`ghcr.io/…`).
+
+**Einhängungen kommen vom Wirt.** `./vorbau/nginx.conf` in ein fremdes Abbild
+zu hängen heisst nicht, dass die Datei in **unserem** Abbild liegt. Der
+Reverse Proxy, den das README jetzt vorschlägt, hätte den Bau gebrochen.
+Gelesen werden deshalb nur `command:` und `entrypoint:`.
+
+**Satzzeichen der Shell klebten am Dateinamen.** Aus `…schema.sql; do` wurde
+`…schema.sql;` — eine Datei, die es nie gab.
+
+**Die Warnung «kein einziger Pfad» konnte aus einem Bau nie kommen.** Gezählt
+wurden auch die Pfade von der Befehlszeile, und das Dockerfile gibt immer
+zwei mit. Jetzt zählt für diese Warnung nur, was aus der compose-Datei kam.
+
+**`zonen-probe` verschluckte den Grund.** Ein fehlendes `ICU_ATHLET_ID` bei
+gesetztem Schlüssel wurde als «kein Schlüssel gesetzt» gemeldet, und das
+Skript gab die Ablage aus, als käme sie aus dem Konto.
+
+Und im README stand sechs Zeilen über dem Absatz, der `--build` für
+verpflichtend erklärt, noch ein `docker compose up -d` ohne.

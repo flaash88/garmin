@@ -193,6 +193,35 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
     expect(nach.get('Run')?.schwellenPaceSekundenJeKm).toBeCloseTo(294.1, 1)
   })
 
+  it('schreibt die echte Antwort des Athleten vollstaendig weg', async () => {
+    // Dieselbe Antwort wie in sport-settings-echt.test.ts, hier aber ueber
+    // den ganzen Weg bis in die Tabelle.
+    const { readFileSync } = await import('node:fs')
+    const antwort = JSON.parse(
+      readFileSync(new URL('../icu/proben/sport-settings.json', import.meta.url), 'utf8'),
+    ) as Array<Record<string, unknown>>
+    vi.mocked(endpunkte.zonenHolen).mockResolvedValue(antwort)
+
+    const e = await lauf.zonenAbgleichen({ schluessel: 'x', athletId: 'i706078' })
+    expect(e.geholt).toBe(4)
+    expect(e.geschrieben).toBe(12)
+
+    const zeilen = await datenbank().select().from(schema.zonen)
+    const nach = new Map(zeilen.map((z) => [z.sportart, z]))
+    expect(zeilen).toHaveLength(12)
+    expect(nach.get('Run')?.schwellenPuls).toBe(165)
+    expect(nach.get('TrailRun')?.maxPuls).toBe(196)
+    expect(nach.get('Ride')?.schwellenPuls).toBe(200)
+    // Kein Schwellentempo hinterlegt — das kostet den Satz nicht.
+    expect(nach.get('Run')?.schwellenPaceSekundenJeKm).toBeNull()
+    expect(nach.get('Run')?.pulsGrenzen).toEqual([130, 148, 162, 177, 184, 192, 196])
+
+    // Ein zweiter Lauf ändert nichts und legt nichts doppelt an.
+    const zweiter = await lauf.zonenAbgleichen({ schluessel: 'x', athletId: 'i706078' })
+    expect(zweiter.geschrieben).toBe(12)
+    expect(await datenbank().select().from(schema.zonen)).toHaveLength(12)
+  })
+
   it('meldet einen Schritt ohne Ergebnis als Warnung, nicht als Erfolg', async () => {
     // Der eigentliche Befund: nicht der Fehler, sondern dass er sich als
     // Erfolg meldete. Antwort nicht leer, Ergebnis leer — das ist eine
