@@ -29,10 +29,15 @@ export const config = {
     /*
      * Alles außer den hier aufgezählten Pfaden.
      *
+     * /api/icu/webhook ist ausgenommen, weil intervals.icu kein
+     * Sitzungscookie hat. Der Endpunkt schützt sich selbst über das
+     * gemeinsame Geheimnis in TAKT_WEBHOOK_SECRET und weist ohne
+     * eingerichtetes Geheimnis alles ab.
+     *
      * Die Ausnahmen sind einzeln benannt und nicht über „hat einen Punkt im
      * letzten Abschnitt" gebildet. Eine solche Regel ließe später jeden Pfad
      * wie /laeufe/2026.01.01 oder /laeufe/123/ausfuhr.gpx ungeschützt durch.
      */
-    '/((?!anmeldung$|api/health$|_next/static/|_next/image|fonts/|vendor/|symbole/|favicon\\.ico$|manifest\\.webmanifest$|sw\\.js$|robots\\.txt$).*)',
+    '/((?!anmeldung$|api/health$|api/icu/webhook$|_next/static/|_next/image|fonts/|vendor/|symbole/|favicon\\.ico$|manifest\\.webmanifest$|sw\\.js$|robots\\.txt$).*)',
   ],
 }

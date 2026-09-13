@@ -481,3 +481,131 @@ liefert HTTPS. Statt eines Schlupflochs schreibt die Anmeldung jetzt eine
 deutliche Zeile ins Serverprotokoll, wenn sie über Klartext-HTTP läuft und
 der Wirt nicht `localhost` ist. Auf `localhost` gilt HTTP als
 vertrauenswürdig, dort greift das nicht.
+
+---
+
+## Phase 3 — Abgleich mit intervals.icu
+
+### E3.1 — Monotonie: der Auftrag nennt die falsche Formel
+
+**Abweichung, bewusst.** Der Auftrag schreibt: „Monotonie — Standardabweichung
+der Tagesbelastung über sieben Tage". Die Standardabweichung **ist** nicht die
+Monotonie. Nach Foster (1998) ist sie
+
+    Monotonie = Mittelwert der Tagesbelastung / Standardabweichung
+
+Gerechnet wird die Formel von Foster. Wörtlich genommen hieße der Auftrag,
+eine Streuung als „Monotonie" zu beschriften; im Wochenbriefing stünde dann
+eine Zahl unter einem Namen, der etwas anderes bedeutet — und der Coach zöge
+daraus falsche Schlüsse. Beide Größen werden zurückgegeben, `streuung` und
+`monotonie`, damit niemand raten muss.
+
+Zwei Feinheiten:
+
+- Bei sieben gleichen Tagen ist die Streuung null und die Monotonie nicht
+  definiert. Zurückgegeben wird `null`, nicht `Infinity`.
+- Fehlende Tage zählen als Ruhetage mit null Belastung, nicht als
+  „übersprungen". Wer sieben Tage gleichmäßig trainiert, **soll** eine hohe
+  Monotonie haben; das ist die Aussage der Kennzahl.
+
+Zusätzlich fällt der Belastungsdruck ab (Wochenbelastung mal Monotonie), das
+übliche Gegenstück.
+
+### E3.2 — Rampe als Anstieg je Woche
+
+„Anstieg der Fitness über vier Wochen, Warnschwelle 5,0". Ausgegeben wird der
+Anstieg **je Woche**, weil die Schwelle 5,0 sich darauf bezieht: mehr als fünf
+CTL-Punkte Zuwachs in einer Woche gilt als zu schnell. Bei genau 5,0 wird
+nicht gewarnt, erst darüber. Ein Test hält beides fest.
+
+CTL kommt fertig von intervals.icu und wird nicht selbst gerechnet.
+
+### E3.3 — Defensiv lesen, Rohsatz behalten
+
+Ohne echten Zugang lässt sich nicht feststellen, wie die Antworten von
+intervals.icu tatsächlich aussehen. Deshalb:
+
+- `lib/icu/felder.ts` nimmt je Wert **mehrere mögliche Namen** entgegen und
+  gibt `null`, wenn keiner trägt. Nie `0` — der Unterschied zwischen „nicht
+  geliefert" und „ist null" bleibt erhalten, sonst stünde in der Oberfläche
+  später „0 Schläge" statt gar nichts.
+- Jeder Satz wird zusätzlich vollständig als `rohdaten` abgelegt. Stellt sich
+  heraus, dass ein Feld anders heißt, ist die Angabe noch da und muss nicht
+  neu geholt werden.
+- Form wird **nicht** aus CTL und ATL gerechnet, wenn sie fehlt. Der Auftrag
+  verlangt den gelieferten Wert; ein selbst gerechneter wäre nicht derselbe.
+  Ein Test hält das fest.
+
+### E3.4 — E0.8 bleibt offen: der echte Aufruf fehlt
+
+**Angehalten, wie vereinbart — ein Zugangsdatum fehlt.** Der Auftrag verlangt,
+beim ersten Lauf mit einem echten Aufruf zu prüfen, welche Wellness-Felder
+befüllt sind, und dauerhaft leere auszublenden. Dafür braucht es `ICU_API_KEY`
+und `ICU_ATHLET_ID`. Beide liegen nicht vor.
+
+Gebaut ist alles, was nicht davon abhängt:
+
+- `befuellungZaehlen()` zählt je Feldname, wie oft ein nicht leerer Wert kam.
+- Die Tabelle `feldbefuellung` nimmt das Ergebnis auf.
+- Die Erstbefüllung ruft es auf und schreibt es weg.
+- Ein Test gegen echtes PostgreSQL bildet genau den Fall nach: zwei
+  Wellness-Tage, `restingHR` zweimal befüllt, `soreness` einmal, `skinTemp`
+  und `respiration` nie. Das Ergebnis steht danach richtig in der Tabelle.
+
+Sobald die Zugangsdaten da sind, beantwortet ein `pnpm erstbefuellung` die
+Frage von selbst. Das Ergebnis kommt dann hierher, und Phase 4 blendet die
+leeren Felder aus.
+
+### E3.5 — Datenbankverbindung wird träge aufgebaut
+
+**Eigener Fehler, gefunden beim Bauen.** Die Verbindung entstand beim Laden
+des Moduls. Damit scheiterte `pnpm build`: Next wertet beim Sammeln der
+Seitendaten jedes Modul aus, das eine Route einführt, und der Wurf auf
+Modulebene brach den Build ab. Ein Build darf keine laufende Datenbank
+brauchen. Jetzt wird beim ersten Zugriff verbunden, über `datenbank()`.
+
+### E3.6 — Vitest kannte den `@/`-Alias nicht
+
+Aufgefallen beim ersten Test, dessen Prüfling `@/lib/…` einführt. `tsconfig`
+kannte den Alias, `vitest.config.ts` nicht — jeder künftige Test mit diesem
+Pfad wäre gescheitert. Nachgetragen.
+
+### E3.7 — Der Webhook trägt ein eigenes Geheimnis
+
+`/api/icu/webhook` ist von der Middleware ausgenommen: intervals.icu hat kein
+Sitzungscookie. Stattdessen ein gemeinsames Geheimnis im Kopf
+`X-Takt-Webhook`, aus `TAKT_WEBHOOK_SECRET`. **Ohne gesetztes Geheimnis nimmt
+der Endpunkt nichts an** (503) — offen stehen soll er nie, auch nicht aus
+Versehen. Gegen den laufenden Server geprüft: ohne Kopf 401, mit falschem Kopf
+401, mit richtigem Kopf durch.
+
+### E3.8 — Strecken über eine Signatur, nicht über Fréchet
+
+Wiederkehrende Strecken werden über acht gleichmäßig verteilte Stützpunkte
+verglichen, dazu die Gesamtlänge. Ein echter Streckenvergleich über den
+Fréchet-Abstand wäre genauer und deutlich teurer; für „das ist wieder die
+Runde am Fluss" reicht die Signatur.
+
+Verglichen wird in beide Laufrichtungen — dieselbe Runde andersherum ist
+dieselbe Runde. Die Längenprüfung ist nicht schmückendes Beiwerk: ohne sie
+ginge eine 10-km-Runde als 14-km-Runde durch, solange die Stützpunkte nahe
+liegen. Ein Test hält genau diesen Fall fest.
+
+### E3.9 — Gegen echtes PostgreSQL geprüft, nicht gegen Attrappen
+
+Die Schreibpfade lassen sich nicht durch Typen absichern: greift das Upsert,
+ist ein zweiter Durchlauf folgenlos, überlebt der Rohsatz. Dafür läuft eine
+echte PostgreSQL-16-Instanz, die Migration wird eingespielt, und sieben Tests
+laufen dagegen — Einfügen, Idempotenz, spätere Änderung, Stand des Abgleichs,
+unbrauchbare Sätze, Feldbefüllung, Wellness samt CTL und ATL.
+
+Ohne `TAKT_TEST_DATENBANK_URL` wird die Reihe übersprungen statt rot zu sein:
+ohne laufende Datenbank wäre sie nicht aussagekräftig.
+
+### E3.10 — Ein gescheiterter Schritt hält die anderen nicht auf
+
+Fällt der Abruf der Ausrüstung aus, sollen Aktivitäten und Wellness trotzdem
+ankommen. Jeder Schritt läuft für sich; Fehler sammeln sich im Ergebnis und in
+der Spalte `zuletzt_fehler`. Die Fortschrittsanzeige nennt die tatsächlich
+geholten Zahlen — die „1 240 Einheiten" aus dem Entwurf sind ein Platzhalter
+und stehen nirgends im Code.

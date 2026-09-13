@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "hash": "node --experimental-strip-types scripts/hash.ts"
+    "hash": "node --experimental-strip-types scripts/hash.ts",
+    "erstbefuellung": "node --experimental-strip-types --env-file-if-exists=.env scripts/erstbefuellung.ts",
+    "abgleich": "node --experimental-strip-types --env-file-if-exists=.env scripts/abgleich.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",

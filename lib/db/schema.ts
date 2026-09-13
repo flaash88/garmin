@@ -73,3 +73,80 @@ export const abgleich = pgTable('abgleich', {
   zuletztAm: timestamp('zuletzt_am', { withTimezone: true }),
   zuletztFehler: text('zuletzt_fehler'),
 })
+
+/** Geplante Einheiten. Wird gelesen und auch nach intervals.icu geschrieben. */
+export const plan = pgTable(
+  'plan',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tag: date('tag').notNull(),
+    name: text('name'),
+    typ: varchar('typ', { length: 32 }),
+    beschreibung: text('beschreibung'),
+    zielBelastung: integer('ziel_belastung'),
+    zielDauerSekunden: integer('ziel_dauer_sekunden'),
+    zielStreckeMeter: doublePrecision('ziel_strecke_meter'),
+    rohdaten: jsonb('rohdaten'),
+    geholtAm: timestamp('geholt_am', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('plan_tag_idx').on(t.tag)],
+)
+
+export const ausruestung = pgTable('ausruestung', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  name: text('name').notNull(),
+  art: varchar('art', { length: 32 }),
+  inBenutzung: integer('in_benutzung'),
+  laufleistungMeter: doublePrecision('laufleistung_meter'),
+  rohdaten: jsonb('rohdaten'),
+  geholtAm: timestamp('geholt_am', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** Schwellen und Grenzen der Herzfrequenzzonen aus den Sport-Settings. */
+export const zonen = pgTable('zonen', {
+  sportart: varchar('sportart', { length: 32 }).primaryKey(),
+  schwellenPuls: integer('schwellen_puls'),
+  maxPuls: integer('max_puls'),
+  schwellenPaceSekundenJeKm: doublePrecision('schwellen_pace_sekunden_je_km'),
+  pulsGrenzen: jsonb('puls_grenzen'),
+  rohdaten: jsonb('rohdaten'),
+  geholtAm: timestamp('geholt_am', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/** Wiederkehrende Strecken, selbst erkannt. Kommt nicht von intervals.icu. */
+export const strecken = pgTable('strecken', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  name: text('name'),
+  laengeMeter: doublePrecision('laenge_meter').notNull(),
+  /** Stützpunkte der Signatur, siehe lib/analyse/strecken.ts. */
+  signatur: jsonb('signatur').notNull(),
+  erstMal: timestamp('erst_mal', { withTimezone: true }).notNull(),
+  letztMal: timestamp('letzt_mal', { withTimezone: true }).notNull(),
+  anzahl: integer('anzahl').notNull().default(1),
+})
+
+export const streckenZuordnung = pgTable(
+  'strecken_zuordnung',
+  {
+    aktivitaetId: varchar('aktivitaet_id', { length: 64 })
+      .primaryKey()
+      .references(() => aktivitaeten.id, { onDelete: 'cascade' }),
+    streckeId: varchar('strecke_id', { length: 64 })
+      .notNull()
+      .references(() => strecken.id, { onDelete: 'cascade' }),
+    mittlererAbstandMeter: doublePrecision('mittlerer_abstand_meter'),
+  },
+  (t) => [index('strecken_zuordnung_strecke_idx').on(t.streckeId)],
+)
+
+/**
+ * Wie oft ein Wellness-Feld über den Erstbestand befüllt war. Grundlage für
+ * E0.8: dauerhaft leere Felder werden in der Oberfläche ausgeblendet.
+ */
+export const feldbefuellung = pgTable('feldbefuellung', {
+  quelle: varchar('quelle', { length: 32 }).notNull(),
+  feld: varchar('feld', { length: 64 }).notNull(),
+  befuellt: integer('befuellt').notNull(),
+  gesamt: integer('gesamt').notNull(),
+  geprueftAm: timestamp('geprueft_am', { withTimezone: true }).notNull().defaultNow(),
+})
