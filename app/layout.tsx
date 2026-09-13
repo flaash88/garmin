@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next'
+import { ServiceWorkerAnmelden } from '@/komponenten/sw-anmelden'
 import { THEMA_SKRIPT } from '@/lib/thema'
 import './globals.css'
 
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Randlos bis in die Safe Area, sonst greifen env(safe-area-inset-*) nicht.
   viewportFit: 'cover',
 }
 
@@ -19,7 +21,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEMA_SKRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorkerAnmelden />
+      </body>
     </html>
   )
 }

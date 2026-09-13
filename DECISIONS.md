@@ -664,3 +664,125 @@ Transaktion.
 
 **Die Wartezeiten stimmten nicht mit dem Kommentar überein** — tatsächlich
 0, 1, 4 s statt der behaupteten 1, 4, 9 s. Beides angeglichen.
+
+---
+
+## Phase 4 — Oberfläche
+
+### E4.1 — Aufbau der Routen
+
+Alles hinter der Anmeldung liegt in der Routengruppe `app/(angemeldet)/`.
+Der Rahmen dort trägt `export const dynamic = 'force-dynamic'`: die Kopfzeile
+liest den Stand des Abgleichs aus der Datenbank, und ohne diese Zeile
+versuchte `next build` die Seiten vorab zu erzeugen — mit einer Datenbank,
+die es beim Bauen nicht gibt.
+
+`typedRoutes` ist an. Das hat sich sofort ausgezahlt: jeder Verweis auf eine
+Seite, die es noch nicht gab, war ein Fehler beim Typprüfen statt ein toter
+Link zur Laufzeit.
+
+### E4.2 — Mobil Karten, am Schreibtisch Tabellen
+
+Der Auftrag verbietet waagrecht scrollende Tabellen. Umgesetzt ist das nicht
+über `overflow`, sondern über zwei Darstellungen derselben Daten: unter
+`md` Karten, darüber die Tabelle des Entwurfs. Betroffen sind
+Aktivitätenliste, Runden der Aktivität, Erholung und der Wochenplan.
+
+Berührungsziele durchgehend mindestens 44 px — auch dort, wo der Entwurf
+kleiner ist. Die untere Leiste ist 50 px hoch, wie im Entwurf, und trägt
+zusätzlich `min-h-11`. Der Inhalt hält unten
+`calc(50px + env(safe-area-inset-bottom))` frei.
+
+### E4.3 — E0.8 ist in der Oberfläche verdrahtet und geprüft
+
+Die Erholungsseite liest `feldbefuellung` und blendet jede Spalte aus, deren
+Quellfelder über den gesamten Bestand nie befüllt waren. Solange die Tabelle
+leer ist — also vor der ersten Erstbefüllung — wird nichts ausgeblendet.
+
+Gegen den laufenden Server geprüft: `weight` auf „nie befüllt" gesetzt, Seite
+neu geladen, die Spalte **Gewicht verschwindet vollständig**; HRV bleibt
+stehen. Kein Strich als Platzhalter, wie beauftragt.
+
+Damit ist die Mechanik fertig. Offen bleibt nur, **welche** Felder es
+tatsächlich trifft — das beantwortet der erste echte Abruf (E3.4).
+
+### E4.4 — Die Suche tut wirklich etwas
+
+Der Entwurf zeigt ein Suchfeld mit ⌘K. Ein Feld, das nichts tut, wäre
+schlechter als keines. Umgesetzt als Befehlsleiste über `/api/suche`:
+Name, Typ und die Beschreibung aus dem Rohsatz, entprellt, abbrechbar,
+mindestens zwei Zeichen. Die Route liegt hinter der Middleware.
+
+Muster für `ilike` werden maskiert — sonst ließe eine Suche nach `%` den
+ganzen Bestand ausgeben.
+
+### E4.5 — Karte: OSM unmittelbar, Rückfall gestaltet
+
+Leaflet 1.9.4 wird beim Öffnen einer Aktivität aus `/vendor/leaflet/`
+nachgeladen, nicht gebündelt — es wiegt mehr als die Seite selbst und wird
+nur dort gebraucht.
+
+Kacheln kommen unmittelbar von `tile.openstreetmap.org`, Attribution nach
+OSM-Vorgabe. Kein eigener Kachel-Dienst (E0.7).
+
+Der Rückfall greift nach **vier** Kachelfehlern in Folge, nicht nach dem
+ersten — ein einzelner Ausfall ist normal. Dann wird die Strecke als
+Vektorlinie über ein Gradnetz gezeichnet, ohne Leaflet und ohne Kacheln,
+mit dem Hinweis „Kachel-Dienst nicht erreichbar · Strecke als Vektorlinie".
+Das Seitenverhältnis wird nach Breitengrad berichtigt, sonst wirkt die
+Strecke gestaucht.
+
+### E4.6 — PWA ohne Bildbibliothek
+
+Manifest über `app/manifest.ts`, Service Worker unter `public/sw.js`.
+
+Der Service Worker hält dreierlei: Gerüst und Schriften fest vorrätig,
+Seiten zuerst aus dem Netz und bei Ausfall aus dem Speicher — so bleibt der
+letzte Stand offline lesbar —, und OSM-Kacheln clientseitig, gedeckelt bei
+600 Stück. `/api/…` und `/anmeldung` werden **nie** zwischengespeichert.
+
+Die Symbole ließen sich nicht erzeugen: weder PIL noch ImageMagick sind da.
+Statt eine Abhängigkeit nachzuladen, schreibt ein kurzes Skript die PNGs von
+Hand — Kopfblock, IDAT über `zlib.deflate`, CRC-32 selbst gerechnet. Ergebnis
+geprüft: gültige PNGs, 192 × 192 und 512 × 512, Truecolor.
+
+### E4.7 — Eigene Fehlerseiten, weil Next englisch antwortet
+
+**Gefunden beim Prüfen der ausgelieferten Seiten.** Ohne eigene Dateien zeigt
+Next bei 404 „This page could not be found" — eine englische Zeichenkette in
+der Oberfläche, gegen die durchgehende Vorgabe.
+
+Neu: `app/not-found.tsx`, `app/error.tsx` und `app/(angemeldet)/loading.tsx`,
+alle auf Deutsch. Die Fehlerseite zeigt **nie** die Einzelheiten — die
+stünden sonst im Browser und könnten Pfade oder Verbindungszeichenketten
+verraten. Der Ausweis genügt, um den Fehler im Protokoll wiederzufinden.
+
+Nachgeprüft: über alle neun Seiten findet sich keine englische Zeichenkette
+mehr.
+
+### E4.8 — Der Coach-Strom ist fertig, das Gehirn fehlt
+
+Die Oberfläche des Coach ist vollständig: Antwortstrom über SSE, blinkender
+Schreibbalken, „Der Coach sieht sich deine Daten an …", einklappbare
+Werkzeugzeilen mit Beschriftung und Detail, Fehler mit „Erneut". Alles
+Zustände, die der Entwurf zeigt und die Phase 4 verlangt.
+
+`/api/coach` antwortet bis Phase 5 mit 503 und sagt, woran es liegt —
+fehlender Schlüssel oder noch nicht gebaut. Eine erfundene Antwort wäre
+schlimmer als eine ehrliche Absage.
+
+### E4.9 — „Letzter Abgleich" ist jetzt echt (löst E2.4 ab)
+
+In Phase 2 hatte ich die Zeile weggelassen, weil es keinen Abgleich gab. Der
+Stand steht jetzt in der Kopfzeile und auf „Mehr", mit echtem Zeitpunkt aus
+der Tabelle `abgleich`. Der Punkt davor trägt die Aussage: grün
+durchgelaufen, rot letzter Versuch gescheitert, grau noch nie gelaufen.
+
+Auf der **Anmeldeseite** bleibt die Zeile weg. Sie wäre dort eine Auskunft an
+Unangemeldete.
+
+### E4.10 — Zugangsdaten erscheinen nur als „hinterlegt"
+
+Die Seite „Mehr" zeigt, ob `ICU_API_KEY` und `ANTHROPIC_API_KEY` gesetzt
+sind — nie den Wert, auch nicht gekürzt. Die Athleten-ID wird gezeigt; sie
+ist keine Zugangsberechtigung, und der Entwurf zeigt sie.
