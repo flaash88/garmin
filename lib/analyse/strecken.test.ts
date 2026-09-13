@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { abstand, signatur, stuetzpunkte, vergleichen, type Punkt } from './strecken'
+import { abstand, ausduennen, signatur, stuetzpunkte, vergleichen, type Punkt } from './strecken'
 
 // Graz, Murufer. Ein Grad Breite sind rund 111 km.
 const START: Punkt = { breite: 47.0707, laenge: 15.4395 }
@@ -122,5 +122,29 @@ describe('vergleichen', () => {
   it('gibt null zurueck, wenn eine Signatur unbrauchbar ist', () => {
     expect(vergleichen(signatur([], 0), signatur(spur(10), 5000))).toBeNull()
     expect(vergleichen(signatur(spur(10), 0), signatur(spur(10), 5000))).toBeNull()
+  })
+})
+
+describe('ausduennen', () => {
+  it('laesst eine kurze Spur unveraendert', () => {
+    const s = spur(50)
+    expect(ausduennen(s, 1500)).toHaveLength(50)
+  })
+
+  it('kappt eine lange Spur auf die Obergrenze', () => {
+    expect(ausduennen(spur(12_000), 1500)).toHaveLength(1500)
+  })
+
+  it('behaelt Anfang und Ende', () => {
+    const s = spur(12_000)
+    const d = ausduennen(s, 1000)
+    expect(d[0]?.breite).toBeCloseTo(s[0]?.breite ?? 0, 6)
+    expect(d.at(-1)?.breite).toBeCloseTo(s.at(-1)?.breite ?? 0, 6)
+  })
+
+  it('behaelt die Form: die ausgeduennte Spur gilt als dieselbe Strecke', () => {
+    const s = spur(12_000)
+    const d = ausduennen(s, 800)
+    expect(vergleichen(signatur(s, 10_000), signatur(d, 10_000))?.gleich).toBe(true)
   })
 })

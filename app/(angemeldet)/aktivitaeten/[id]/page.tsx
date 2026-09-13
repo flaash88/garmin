@@ -5,6 +5,7 @@ import { Kachel } from '@/komponenten/zustaende'
 import { aktivitaet, streckeZurAktivitaet } from '@/lib/daten/aktivitaeten'
 import { rundenAusRohdaten, spurAusVerlauf, verlaufBesorgen } from '@/lib/daten/verlauf'
 import { splitGuete, verfall } from '@/lib/analyse/splits'
+import { ausduennen } from '@/lib/analyse/strecken'
 import { datum, dauer, mitVorzeichen, pace, strecke, uhrzeit, zahl } from '@/lib/format'
 
 export default async function AktivitaetDetail({
@@ -17,7 +18,9 @@ export default async function AktivitaetDetail({
   if (!a) notFound()
 
   const { daten, fehler } = await verlaufBesorgen(id)
-  const spur = spurAusVerlauf(daten)
+  // Ausgedünnt, bevor die Spur in den Client geht: eine Stunde Aufzeichnung
+  // sind über zehntausend Punkte, und die Karte zeigt davon nur den Verlauf.
+  const spur = ausduennen(spurAusVerlauf(daten))
   const runden = rundenAusRohdaten(a.rohdaten)
   const zugeordnet = await streckeZurAktivitaet(id)
 

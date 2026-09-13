@@ -1,10 +1,24 @@
 /** Kalenderwochen nach ISO 8601 — Woche beginnt am Montag. */
 
+/**
+ * Montag derselben Woche, als **örtliche** Mitternacht.
+ *
+ * Nicht als UTC-Mitternacht: die Aufrufer reichen das Ergebnis an `tagText`
+ * weiter, und das liest örtlich. Westlich von Greenwich verschöbe sich die
+ * Woche sonst um einen Tag und der Sonntag fiele aus dem Plan.
+ */
 export function montagDerWoche(d: Date): Date {
-  const m = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-  const wochentag = m.getUTCDay() || 7
-  m.setUTCDate(m.getUTCDate() - (wochentag - 1))
+  const m = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const wochentag = m.getDay() || 7
+  m.setDate(m.getDate() - (wochentag - 1))
   return m
+}
+
+/** Tage auf eine örtliche Mitternacht aufschlagen. */
+export function tageSpaeter(tage: number, ab: Date): Date {
+  const d = new Date(ab)
+  d.setDate(d.getDate() + tage)
+  return d
 }
 
 export function kalenderwoche(d: Date): { jahr: number; woche: number } {

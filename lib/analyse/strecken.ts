@@ -132,3 +132,16 @@ export function vergleichen(a: Signatur, b: Signatur): Aehnlichkeit | null {
       laengenunterschied <= GLEICH_LAENGENUNTERSCHIED,
   }
 }
+
+/**
+ * Dünnt eine Spur auf höchstens `hoechstens` Punkte aus, ohne die Form zu
+ * verlieren — gleichmäßig über die Strecke, Anfang und Ende bleiben liegen.
+ *
+ * Gedacht für den Weg zum Browser: eine Stunde Aufzeichnung sind schnell
+ * über zehntausend Punkte. Die Karte zeigt davon ohnehin nur den Verlauf,
+ * und die Zahlen der Aktivität kommen aus anderen Feldern.
+ */
+export function ausduennen(spur: readonly Punkt[], hoechstens = 1500): Punkt[] {
+  if (spur.length <= hoechstens) return [...spur]
+  return stuetzpunkte(spur, hoechstens)
+}

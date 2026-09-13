@@ -89,11 +89,17 @@ export function CoachStrom() {
       })
 
       if (!antwort.ok || !antwort.body) {
-        throw new Error(
-          antwort.status === 503
-            ? 'Der Coach ist nicht eingerichtet. ANTHROPIC_API_KEY fehlt.'
-            : `Der Coach antwortet nicht (${antwort.status}).`,
-        )
+        // Die Begründung steht in der Antwort. Sie hier durch eine feste
+        // Meldung zu ersetzen hiesse, jemandem mit gesetztem Schlüssel zu
+        // sagen, der Schlüssel fehle.
+        let grund: string | null = null
+        try {
+          const koerper = (await antwort.json()) as { fehler?: unknown }
+          if (typeof koerper.fehler === 'string') grund = koerper.fehler
+        } catch {
+          /* Kein brauchbarer Körper — dann bleibt es beim Statuscode. */
+        }
+        throw new Error(grund ?? `Der Coach antwortet nicht (${antwort.status}).`)
       }
 
       const leser = antwort.body.getReader()

@@ -786,3 +786,51 @@ Unangemeldete.
 Die Seite „Mehr" zeigt, ob `ICU_API_KEY` und `ANTHROPIC_API_KEY` gesetzt
 sind — nie den Wert, auch nicht gekürzt. Die Athleten-ID wird gezeigt; sie
 ist keine Zugangsberechtigung, und der Entwurf zeigt sie.
+
+### E4.11 — Sieben Befunde aus `/code-review`, alle behoben
+
+Zwei davon sind Wiederholungstäter: eine Zeitzonenfalle und eine halb
+wirksame E0.8-Mechanik. Testzahl von 127 auf 133.
+
+**Jeder Sonntagslauf fiel aus der Wochenkachel.** Die Woche endete bei
+Sonntag 00:00 statt beim Beginn des Folgemontags. Das Balkendiagramm
+darunter rechnete anders und zeigte den Lauf — die Kachel nicht. Nachgestellt
+mit einem Lauf am Sonntag 20:00: die Kachel zeigte 39,4 km, die Datenbank
+51,4. Nach der Berichtigung stimmen beide.
+
+**E0.8 wirkte nur für Felder mit genau einem Namen.** Die Prüfung verlangte,
+dass **alle** möglichen Feldnamen einer Spalte als leer eingetragen sind.
+`befuellungZaehlen` trägt aber nur Namen ein, die intervals.icu tatsächlich
+schickt — `sleepHours` steht nie in der Tabelle, wenn `sleepSecs` kommt.
+Damit waren Schlaf, Ruhepuls und Befinden **nie** auszublenden. Aufgefallen
+war es nicht, weil ich mit `weight` geprüft hatte, das nur einen Namen hat.
+
+Neu ist `spalteZeigen`: eine Spalte verschwindet, wenn von ihren Namen
+mindestens einer vorkam und alle vorgekommenen leer blieben. Namen, die nie
+geschickt wurden, sagen nichts aus und werden übergangen. Sieben Tests, einer
+genau für diesen Fall.
+
+**`montagDerWoche` gab UTC-Mitternacht zurück**, die Aufrufer lasen sie
+örtlich weiter. Westlich von Greenwich verschöbe sich die ganze Planwoche um
+einen Tag. Dieselbe Klasse wie der Fehler aus E1.9 — und meine Tests liefen
+wieder nur unter UTC und östlich davon. Jetzt örtliche Mitternacht, und die
+Testreihe läuft zur Probe unter UTC, America/New_York und Pacific/Auckland.
+
+**„Jetzt abgleichen" hätte auf `localhost` umgeleitet.** Die Route griff nach
+`TAKT_ADRESSE`, eine Variable, die es im ganzen Projekt nicht gibt. Jetzt
+kommt das Ziel aus der Anfrage selbst, mit Prüfung des Referers gegen den
+eigenen Ursprung.
+
+**Der Coach meldete jedem „ANTHROPIC_API_KEY fehlt"**, auch bei gesetztem
+Schlüssel — die Begründung aus der Antwort wurde weggeworfen. Jetzt wird sie
+gelesen.
+
+**Der Service Worker legte Umleitungen falsch ab.** Lief die Sitzung ab,
+antwortete „/" mit einer Umleitung zur Anmeldung, und die landete unter „/"
+im Speicher. Offline erschien dann die Anmeldeseite als Übersicht.
+`antwort.redirected` wird jetzt ausgeschlossen.
+
+**Die volle GPS-Spur ging in den Browser.** Eine Stunde Aufzeichnung sind
+über zehntausend Punkte. Neu ist `ausduennen()`, das auf 1500 Punkte
+zurückgeht — über die Streckenlänge verteilt, Anfang und Ende bleiben. Ein
+Test prüft, dass die ausgedünnte Spur noch als dieselbe Strecke gilt.

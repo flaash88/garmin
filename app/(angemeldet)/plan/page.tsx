@@ -1,7 +1,7 @@
 import { Kachel, Leer } from '@/komponenten/zustaende'
 import { planZeitraum } from '@/lib/daten/rest'
 import { aktivitaetenAb } from '@/lib/daten/aktivitaeten'
-import { kalenderwoche, montagDerWoche, tagText } from '@/lib/daten/zeit'
+import { kalenderwoche, montagDerWoche, tageSpaeter, tagText } from '@/lib/daten/zeit'
 import { datum, strecke, zahl } from '@/lib/format'
 
 export const metadata = { title: 'Plan — Takt' }
@@ -11,8 +11,7 @@ const KUERZEL = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] as const
 export default async function Plan() {
   const heute = new Date()
   const montag = montagDerWoche(heute)
-  const sonntag = new Date(montag)
-  sonntag.setUTCDate(sonntag.getUTCDate() + 6)
+  const sonntag = tageSpaeter(6, montag)
 
   const [eintraege, gelaufen] = await Promise.all([
     planZeitraum(montag, sonntag),
@@ -22,9 +21,7 @@ export default async function Plan() {
   const { woche: kw } = kalenderwoche(heute)
 
   const tage = KUERZEL.map((kuerzel, i) => {
-    const d = new Date(montag)
-    d.setUTCDate(d.getUTCDate() + i)
-    const t = d.toISOString().slice(0, 10)
+    const t = tagText(tageSpaeter(i, montag))
     return {
       tag: t,
       kuerzel,

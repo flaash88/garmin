@@ -1,5 +1,5 @@
 import { Kachel, Leer } from '@/komponenten/zustaende'
-import { leereFelder, naechte } from '@/lib/daten/rest'
+import { befuellung, naechte, spalteZeigen } from '@/lib/daten/rest'
 import { datum, dauer, mitVorzeichen, zahl } from '@/lib/format'
 
 export const metadata = { title: 'Erholung — Takt' }
@@ -15,7 +15,7 @@ const HERKUNFT = {
 
 export default async function Erholung() {
   const zeilen = await naechte(14)
-  const leer = await leereFelder('wellness')
+  const stand = await befuellung('wellness')
 
   if (zeilen.length === 0) {
     return (
@@ -32,12 +32,10 @@ export default async function Erholung() {
   /*
    * Ein Feld wird ausgeblendet, wenn es über den gesamten geholten Bestand
    * nie befüllt war — nicht mit einem Strich gezeigt. Siehe DECISIONS.md,
-   * E0.8. Solange die Tabelle feldbefuellung leer ist (vor der ersten
-   * Erstbefüllung), wird nichts ausgeblendet.
+   * E0.8 und E4.11.
    */
   function zeigen(spalte: keyof typeof HERKUNFT): boolean {
-    if (leer.size === 0) return true
-    return !HERKUNFT[spalte].every((feld) => leer.has(feld))
+    return spalteZeigen(stand, HERKUNFT[spalte])
   }
 
   const hrvWerte = zeilen.map((z) => z.hrv).filter((w): w is number => w !== null)

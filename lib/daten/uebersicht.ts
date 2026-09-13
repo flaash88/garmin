@@ -1,8 +1,8 @@
-import { and, desc, gte, lte, sql } from 'drizzle-orm'
+import { and, desc, gte, lt, lte, sql } from 'drizzle-orm'
 import { datenbank } from '@/lib/db'
 import { aktivitaeten, plan, wellness } from '@/lib/db/schema'
 import { rampe, type RampeErgebnis } from '@/lib/analyse/belastung'
-import { montagDerWoche, tagText, tageZurueck } from './zeit'
+import { montagDerWoche, tageSpaeter, tagText, tageZurueck } from './zeit'
 
 export interface Formkachel {
   /** TSB. Kommt fertig von intervals.icu. */
@@ -58,18 +58,21 @@ export interface Wochenkachel {
 
 export async function wochenkachel(heute = new Date()): Promise<Wochenkachel> {
   const montag = montagDerWoche(heute)
-  const sonntag = new Date(montag)
-  sonntag.setUTCDate(sonntag.getUTCDate() + 6)
+  // Bis zum Beginn des Folgemontags. Ein `lte` auf Sonntag Mitternacht
+  // liesse jeden Sonntagslauf unter den Tisch fallen — das Balkendiagramm
+  // darunter zeigte ihn, die Kachel nicht.
+  const naechsterMontag = tageSpaeter(7, montag)
+  const sonntagEnde = tageSpaeter(6, montag)
 
   const [gelaufen] = await datenbank()
     .select({ summe: sql<string | null>`sum(${aktivitaeten.streckeMeter})` })
     .from(aktivitaeten)
-    .where(and(gte(aktivitaeten.beginn, montag), lte(aktivitaeten.beginn, sonntag)))
+    .where(and(gte(aktivitaeten.beginn, montag), lt(aktivitaeten.beginn, naechsterMontag)))
 
   const geplant = await datenbank()
     .select()
     .from(plan)
-    .where(and(gte(plan.tag, tagText(montag)), lte(plan.tag, tagText(sonntag))))
+    .where(and(gte(plan.tag, tagText(montag)), lte(plan.tag, tagText(sonntagEnde))))
 
   const gelaufenMeter = Number(gelaufen?.summe ?? 0) || 0
   const planAngelegt = geplant.length > 0
@@ -133,20 +136,17 @@ const KUERZEL = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'] as const
 
 export async function dieseWoche(heute = new Date()): Promise<Wochentag[]> {
   const montag = montagDerWoche(heute)
-  const sonntag = new Date(montag)
-  sonntag.setUTCDate(sonntag.getUTCDate() + 7)
+  const naechsterMontag = tageSpaeter(7, montag)
 
   const zeilen = await datenbank()
     .select()
     .from(aktivitaeten)
-    .where(and(gte(aktivitaeten.beginn, montag), lte(aktivitaeten.beginn, sonntag)))
+    .where(and(gte(aktivitaeten.beginn, montag), lt(aktivitaeten.beginn, naechsterMontag)))
 
   const heuteText = tagText(heute)
 
   return KUERZEL.map((kuerzel, i) => {
-    const tag = new Date(montag)
-    tag.setUTCDate(tag.getUTCDate() + i)
-    const text = tag.toISOString().slice(0, 10)
+    const text = tagText(tageSpaeter(i, montag))
     const desTages = zeilen.filter((z) => tagText(z.beginn) === text)
     return {
       tag: text,

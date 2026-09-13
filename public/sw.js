@@ -104,7 +104,14 @@ self.addEventListener('fetch', (e) => {
       (async () => {
         try {
           const antwort = await fetch(anfrage)
-          if (antwort.ok) {
+          /*
+           * Nur ablegen, was wirklich diese Seite ist. Eine Umleitung — etwa
+           * von "/" zur Anmeldung, weil die Sitzung ablief — landete sonst
+           * unter "/" im Speicher, und offline erschiene die Anmeldeseite
+           * als Übersicht. Umgeleitete Antworten weist der Browser bei
+           * Navigationen ohnehin zurück.
+           */
+          if (antwort.ok && !antwort.redirected) {
             const speicher = await caches.open(SEITEN)
             await speicher.put(anfrage, antwort.clone())
           }
