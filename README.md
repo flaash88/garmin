@@ -113,8 +113,14 @@ durchgehend weiter.
 ### 2. Verbund starten
 
 ```
-docker compose up -d
+docker compose up -d --build
 ```
+
+**`--build` gehört dazu.** Ohne das nimmt Compose ein einmal gebautes Abbild
+weiter — auch wenn sich Quelltext oder `docker-compose.yml` geändert haben.
+Genau daran ist der Dienst `wanderung` einmal gescheitert: sein Startbefehl
+wurde auf `datenbank/hochfahren.sh` umgestellt, das Abbild stammte noch von
+davor und kannte die Datei nicht. Siehe DECISIONS.md, E13.1.
 
 Fünf Dienste laufen danach:
 
@@ -125,10 +131,16 @@ Fünf Dienste laufen danach:
 | `takt` | Webdienst |
 | `zeitplan` | Abgleich stündlich, Wochenbriefing täglich geprüft |
 | `sicherung` | `pg_dump` täglich, sieben Stände |
-| `tunnel` | cloudflared |
 
-Weder Webdienst noch Datenbank geben einen Port nach außen. Erreichbar ist
-Takt allein über den Tunnel.
+Die Datenbank gibt keinen Port nach außen. Der Webdienst hört auf
+`127.0.0.1:3000` — nur auf dem Wirt, nicht im Netz. Was davor HTTPS liefert,
+läuft auf dem Wirt und gehört nicht in diesen Verbund; siehe **Vorbau**.
+
+Beim Bauen prüft jede Stufe, ob die Dateien im Abbild liegen, die ihr
+Startbefehl braucht. Fehlt eine, **bricht der Bau ab**, statt ein Abbild
+auszuliefern, das beim ersten Start stehenbleibt. Die Liste wird nicht von
+Hand geführt: `scripts/abbild-pruefen.sh` liest die Pfade aus
+`docker-compose.yml`.
 
 ### 3. Datenbank vorbereiten
 
@@ -228,17 +240,24 @@ Wochenraster, und verschwinden dann von selbst.
 
 ---
 
-## Tunnel
+## Vorbau
 
-Im Cloudflare-Dashboard unter **Zero Trust → Networks → Tunnels** einen
-Tunnel anlegen und als öffentlichen Dienst `http://takt:3000` eintragen —
-der Name `takt` ist der Dienstname im Verbund, nicht ein Wirt im Netz. Den
-Token nach `CLOUDFLARED_TOKEN` in `.env`.
+Der Verbund bringt selbst nichts mit, was von außen erreichbar wäre. Der
+Webdienst hört auf `127.0.0.1:3000`; davor gehört etwas, das HTTPS liefert —
+cloudflared auf dem Wirt, ein Reverse Proxy, was auch immer. Das bleibt
+bewusst außerhalb: es hat einen eigenen Lebenslauf, eigene Zugangsdaten und
+eigene Neustarts, und keines davon soll am Verbund hängen.
 
-Takt setzt das Sitzungscookie mit `Secure`. Über Klartext-HTTP verwirft der
-Browser es und die Anmeldung läuft im Kreis; der Tunnel liefert HTTPS. Läuft
-Takt versehentlich ohne, steht eine deutliche Zeile im Protokoll von
+Mit cloudflared auf dem Wirt zeigt der Tunnel auf `http://127.0.0.1:3000`.
+
+**HTTPS ist nicht wahlfrei.** Takt setzt das Sitzungscookie mit `Secure`;
+über Klartext-HTTP verwirft der Browser es und die Anmeldung läuft im Kreis.
+Läuft Takt versehentlich ohne, steht eine deutliche Zeile im Protokoll von
 `docker compose logs takt`.
+
+Der Kopf, aus dem die Herkunft für den Zähler je IP gelesen wird, steht in
+`TAKT_IP_KOPF` — hinter cloudflared ist das `cf-connecting-ip`. Steht etwas
+anderes davor, den Kopf eintragen, den es setzt.
 
 ### Webhook
 

@@ -65,6 +65,25 @@ COPY --from=bauen --chown=node:node /takt/.next/standalone ./
 COPY --from=bauen --chown=node:node /takt/.next/static ./.next/static
 COPY --from=bauen --chown=node:node /takt/public ./public
 
+# Was der Startbefehl dieser Stufe braucht, muss auch dasein.
+#
+# `CMD ["node", "server.js"]` weiter unten setzt server.js voraus. Fehlt es —
+# weil das eigenständige Bündel nicht entstanden ist oder an anderer Stelle
+# liegt —, läuft der Bau durch und der erste Start bricht ab. Siehe
+# DECISIONS.md, E13.2.
+RUN set -eu; \
+    fehlt=''; \
+    for datei in server.js .next/static; do \
+      [ -e "$datei" ] || fehlt="$fehlt $datei"; \
+    done; \
+    if [ -n "$fehlt" ]; then \
+      echo "FEHLER: Das Abbild ist unvollständig. Es fehlt:$fehlt" >&2; \
+      echo "  server.js entsteht aus .next/standalone — prüf output: 'standalone'" >&2; \
+      echo "  in next.config.ts und die COPY-Zeilen dieser Stufe." >&2; \
+      exit 1; \
+    fi; \
+    echo "Webdienst vollständig: server.js und .next/static liegen im Abbild."
+
 USER node
 EXPOSE 3000
 
@@ -94,7 +113,23 @@ COPY --chown=node:node package.json tsconfig.json drizzle.config.ts ./
 COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node lib ./lib
 COPY --chown=node:node drizzle ./drizzle
+# Ordner **ganz**, nicht Datei für Datei: eine namentliche Liste altert mit
+# jeder neuen Datei, und man merkt es erst beim Start.
 COPY --chown=node:node datenbank ./datenbank
+
+# Die Verbundbeschreibung kommt mit ins Abbild — nicht zum Ausführen, sondern
+# damit die Prüfung gleich darunter weiss, welche Dateien beim Start
+# gebraucht werden. Sie liest die Pfade von dort, statt eine eigene Liste zu
+# führen.
+COPY --chown=node:node docker-compose.yml ./
+
+# Der Bau scheitert, wenn eine dieser Dateien fehlt — statt ein Abbild
+# auszuliefern, das beim ersten Start abbricht. Die beiden Pfade hinter der
+# compose-Datei stehen im Dockerfile selbst (CMD weiter unten) und nicht in
+# der Verbundbeschreibung. Siehe DECISIONS.md, E13.2.
+RUN sh scripts/abbild-pruefen.sh docker-compose.yml \
+      scripts/zeitplan.ts \
+      drizzle.config.ts
 
 USER node
 

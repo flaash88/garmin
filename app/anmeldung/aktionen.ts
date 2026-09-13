@@ -73,7 +73,7 @@ export async function anmelden(
     console.error(
       '[takt] Anmeldung über Klartext-HTTP. Das Sitzungscookie ist Secure und ' +
         'wird vom Browser verworfen — die Anmeldung läuft im Kreis. Takt ' +
-        'braucht HTTPS; der Tunnel aus Phase 6 liefert es.',
+        'braucht HTTPS: davor gehört ein Vorbau, der es liefert.',
     )
   }
 

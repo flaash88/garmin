@@ -6,9 +6,14 @@
 #   takt          Webdienst
 #   zeitplan      stündlicher Abgleich, tägliche Prüfung des Wochenbriefings
 #   sicherung     pg_dump täglich, sieben Stände
-#   tunnel        cloudflared
 #
-#   docker compose up -d
+#   docker compose up -d --build
+#
+# **--build gehört dazu.** Ohne das nimmt Compose ein einmal gebautes Abbild
+# weiter, auch wenn Quelltext oder diese Datei sich geändert haben. Genau so
+# ist der Dienst wanderung einmal abgebrochen: sein Startbefehl wurde auf
+# datenbank/hochfahren.sh umgestellt, das Abbild stammte aber noch von davor
+# und kannte die Datei nicht. Siehe DECISIONS.md, E13.1.
 #
 # Alle Werte kommen aus .env. Siehe .env.beispiel.
 # =============================================================================
@@ -64,7 +69,29 @@ services:
       TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
       TAKT_COACH_PASSWORT: ${TAKT_COACH_PASSWORT:-}
       TZ: ${TZ:-Europe/Vienna}
-    command: ['sh', 'datenbank/hochfahren.sh']
+    # Der Startbefehl prüft zuerst, ob es im Abbild gibt, was der Schritt
+    # anfasst — nicht nur das Skript selbst, sondern auch, was es liest.
+    #
+    # Die Prüfung steht hier und nicht im Abbild, und das ist der Punkt: diese
+    # Datei ist beim Start immer die neueste, das Abbild kann alt sein. Fehlt
+    # etwas, ist «sh: can't open …» die Auskunft, die man nicht gebrauchen
+    # kann — hier steht stattdessen, woran es liegt und was zu tun ist.
+    command:
+      - sh
+      - -c
+      - |
+        fehlt=""
+        for datei in datenbank/hochfahren.sh datenbank/01-auswertung-schema.sql \
+                     node_modules/.bin/drizzle-kit drizzle; do
+          [ -e "$$datei" ] || fehlt="$$fehlt $$datei"
+        done
+        if [ -n "$$fehlt" ]; then
+          echo "FEHLER: Im Abbild fehlt, was der Hochlauf braucht:$$fehlt" >&2
+          echo "  Das Abbild ist älter als diese docker-compose.yml." >&2
+          echo "  Neu bauen:  docker compose up -d --build" >&2
+          exit 1
+        fi
+        exec sh datenbank/hochfahren.sh
     restart: 'no'
 
   takt:
@@ -93,12 +120,12 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       TAKT_CLAUDE_BINAERDATEI: ${TAKT_CLAUDE_BINAERDATEI:-}
       TZ: ${TZ:-Europe/Vienna}
-    # Kein Port nach außen: der Tunnel spricht den Dienst im Verbund an.
-    # Zum Ausprobieren ohne Tunnel die nächsten zwei Zeilen einkommentieren.
-    # ports:
-    #   - '127.0.0.1:3000:3000'
-    expose:
-      - '3000'
+    # Nur auf dem Wirt erreichbar, nicht im Netz. Davor gehört etwas, das
+    # HTTPS liefert — cloudflared auf dem Wirt, ein Reverse Proxy, was auch
+    # immer. Takt setzt das Sitzungscookie mit `Secure`; über Klartext-HTTP
+    # verwirft der Browser es und die Anmeldung läuft im Kreis.
+    ports:
+      - '127.0.0.1:3000:3000'
 
   zeitplan:
     build:
@@ -138,15 +165,6 @@ services:
       - sicherung:/sicherung
       - ./datenbank/sicherung.sh:/sicherung.sh:ro
     entrypoint: ['/bin/sh', '/sicherung.sh']
-
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    depends_on:
-      - takt
-    command: tunnel --no-autoupdate run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARED_TOKEN:?CLOUDFLARED_TOKEN fehlt}
 
 volumes:
   datenbank:

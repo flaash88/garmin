@@ -2053,3 +2053,154 @@ Und eine Ungenauigkeit in dieser Datei selbst: das Beispiel oben in E12.3
 zeigte eine Meldung, die der Code so nicht erzeugen kann — sie behauptete
 «keines davon ist da» und führte `types` zugleich unter den vorhandenen
 Feldern auf. Berichtigt.
+
+## Phase 13 — Ein Abbild, das älter war als sein Startbefehl
+
+### E13.1 — Der Befund lag nicht am Dockerfile
+
+**Befund des Athleten.** `wanderung` bricht ab mit
+`sh: can't open 'datenbank/hochfahren.sh'`, im Abbild liegen unter
+`/takt/datenbank` nur vier der sechs Dateien. Vermutung: das Dockerfile
+kopiert namentlich.
+
+**Die Vermutung trifft nicht zu.** Die Zeile lautet seit Phase 6
+unverändert:
+
+```
+COPY --chown=node:node datenbank ./datenbank
+```
+
+Der ganze Ordner, nie namentlich. `.dockerignore` schließt dort nichts aus.
+Nachgesehen mit `git log -S` — die Zeile kam in `79ef4d6` herein und wurde
+seither nicht angefasst.
+
+**Das Abbild war alt.** Die vier Dateien sind genau der Stand von
+`a79732b`:
+
+| Stand | Inhalt von `datenbank/` |
+| --- | --- |
+| `a79732b` | 01-auswertung-schema.sql, einrichten.sh, sicherung-einspielen.sh, sicherung.sh |
+| `8b16500` | dazu probe-einschleusung.sql |
+| `3591c2b` | dazu hochfahren.sh |
+
+Warum es unbemerkt blieb, steht in derselben Reihe von Commits. Der Dienst
+`wanderung` entstand in `a79732b` — damals mit
+`command: ['node_modules/.bin/drizzle-kit', 'migrate']`, ohne eigene Datei.
+In `3591c2b` wurde **nur der Startbefehl** auf `datenbank/hochfahren.sh`
+umgestellt. Ein neuer Dienst hätte Compose zum Bauen gezwungen, denn für ihn
+gäbe es noch kein Abbild; ein neuer Startbefehl für einen bestehenden Dienst
+zwingt zu nichts. `docker compose up -d` nahm das vorhandene Abbild weiter
+und führte den neuen Befehl darin aus.
+
+Der Bau war also nicht kaputt — er hat gar nicht stattgefunden. Das ist
+auch der Grund, warum die Prüfung aus E13.2 diesen Fall **nicht** verhindert
+hätte: sie läuft beim Bauen, und gebaut wurde nicht.
+
+**Was ihn verhindert:** Die Prüfung steht zusätzlich in der
+`docker-compose.yml` selbst, im Startbefehl von `wanderung`. Diese Datei ist
+beim Start immer die neueste; das Abbild kann alt sein. Fehlt die Datei,
+steht jetzt dort, woran es liegt und was zu tun ist, statt
+`sh: can't open …`:
+
+```
+FEHLER: datenbank/hochfahren.sh fehlt im Abbild.
+  Das Abbild ist älter als diese docker-compose.yml.
+  Neu bauen:  docker compose up -d --build
+```
+
+Und: `--build` steht jetzt überall im Startbefehl — im Kopf der
+`docker-compose.yml`, im README. Für den Athleten ist genau das der nächste
+Schritt.
+
+### E13.2 — Der Bau scheitert, wenn eine Datei fehlt, die der Start braucht
+
+Die Lehre aus der Agent-Binärdatei durchgezogen, wie verlangt. Beide
+Endstufen prüfen jetzt, bevor sie fertig sind:
+
+* **`laufen`** — `server.js` und `.next/static`. Der Startbefehl ist
+  `node server.js`; entsteht das eigenständige Bündel nicht, lief der Bau
+  bisher sauber durch.
+* **`werkzeuge`** — jede Datei, die in einem Startbefehl oder einer
+  Einhängung der `docker-compose.yml` steht.
+
+Der zweite Punkt ist der wichtigere, und daran hängt eine Entscheidung: die
+Liste wird **nicht von Hand geführt**. `scripts/abbild-pruefen.sh` liest die
+Pfade aus der `docker-compose.yml` — was dort startet oder eingehängt wird,
+muss es im Abbild geben. Eine Liste von Hand wäre genau das, was der Athlet
+am vermuteten namentlichen Kopieren kritisiert hat: sie altert mit jeder
+neuen Datei. Dafür kommt die `docker-compose.yml` mit ins Abbild — nicht zum
+Ausführen, sondern damit die Prüfung weiß, wonach sie sucht.
+
+Zerlegt wird in **ganze Felder** an Leerzeichen und Kommas, nicht mit einem
+Muster mitten im Text. Das ist der Unterschied zwischen einer Prüfung, die
+trägt, und einer, die nervt: aus `sicherung:/sicherung/drizzle/meta` würde
+sonst ein `drizzle/meta` herausgeschnitten, das es nie gab, und aus
+`scripts/prüfen.sh` ein abgeschnittenes `scripts/pr`. Über die Form wird
+entschieden, nicht über eine Liste erlaubter Ordner: relativ, mit
+Schrägstrich, keine Adresse, keine Variable, kein absoluter Pfad ins Innere
+eines fremden Abbilds. Kommentarzeilen zählen nicht.
+
+Findet die Prüfung **gar keinen** Pfad, scheitert sie ebenfalls. Eine
+Prüfung, die nichts prüft, meldet sonst «vollständig» und ist ab da wertlos —
+und man merkt es nicht.
+
+**Nachgewiesen, nicht behauptet.** Ein Bau ließ sich hier nicht anstoßen — es
+gibt keinen Docker-Daemon in dieser Umgebung. Geprüft wurde deshalb gegen
+nachgebaute Abbildbäume, darunter der echte Fall: der Dateibestand aus
+`git archive a79732b datenbank` neben der heutigen `docker-compose.yml`. Die
+Prüfung endet dort mit Rückgabewert 1 und nennt `datenbank/hochfahren.sh`.
+Dazu siebzehn Tests in `scripts/abbild-pruefen.test.ts`, die genau diese
+Bäume aufbauen.
+
+Dass der Bau in einem echten Docker-Lauf abbricht, ist damit **nicht**
+gezeigt — nur, dass die Prüfung, die er ausführt, das Richtige tut.
+
+### E13.3 — Tunnel raus, Port auf 127.0.0.1
+
+cloudflared läuft auf dem Wirt. Der Dienst `tunnel` ist aus der
+`docker-compose.yml` verschwunden, `CLOUDFLARED_TOKEN` aus `.env.beispiel`.
+Der Webdienst bindet fest auf `127.0.0.1:3000` statt auf ein
+auskommentiertes `ports:`.
+
+Das ist eine Änderung an der Angriffsfläche, und sie gehört benannt: vorher
+war Takt nur im Verbundnetz erreichbar, jetzt für jeden Prozess auf dem
+Wirt. Damit lässt sich dort auch der Kopf `CF-Connecting-IP` frei setzen und
+der Zähler je IP umgehen. Der Zähler über alle Versuche, der seit Phase 2
+zusätzlich greift (siehe E2.7), bleibt davon unberührt — er war für genau
+diesen Fall da.
+
+Im README heißt der Abschnitt jetzt **Vorbau** statt **Tunnel** und sagt, was
+gilt, egal was davorsteht: HTTPS ist nicht wahlfrei, weil das Sitzungscookie
+`Secure` trägt, und `TAKT_IP_KOPF` muss zu dem passen, was der Vorbau setzt.
+
+### E13.4 — Befunde der Durchsicht
+
+Sechs Stellen, davon zwei, die die Prüfung selbst betrafen:
+
+**Die Liste erlaubter Ordner war die Liste von Hand, die ich gerade
+abgelehnt hatte.** Die erste Fassung sammelte nur Pfade unter `datenbank`,
+`scripts` und `drizzle` ein. Ein Startbefehl wie `['sh', 'lib/hochfahren.sh']`
+hätte «0 Pfade geprüft» und Rückgabewert 0 ergeben — genau der Abbruch beim
+ersten Start, gegen den die Prüfung da ist. Jetzt entscheidet die Form des
+Pfades, nicht sein Ordner.
+
+**Das Muster griff mitten im Text.** `sicherung:/sicherung/drizzle/meta`
+ergab ein `drizzle/meta`, das nirgends stand, und der Bau wäre an einer
+erfundenen Datei gescheitert. Dazu hätte `scripts/prüfen.sh` als
+`scripts/pr` gelesen — in einem Baum mit deutschen Namen keine Kleinigkeit.
+Beides behoben, indem in ganze Felder zerlegt wird.
+
+**`shift || true` unter `set -eu`.** `shift` ist ein besonderes Built-in; ohne
+Argumente beendet es dash und busybox-ash sofort, und im Abbild läuft
+busybox-ash. Der Aufruf ohne weitere Pfade wäre mit Rückgabewert 2 gestorben,
+bevor die Prüfung überhaupt begann.
+
+**Die Prüfung im Startbefehl sah nur das Skript.** `hochfahren.sh` liest
+`datenbank/01-auswertung-schema.sql` und ruft `drizzle-kit` mit dem Ordner
+`drizzle` auf. Ein altes Abbild mit dem Skript, aber ohne eine neue
+SQL-Datei hätte wieder ein unverständliches «not found» ergeben. Geprüft
+werden jetzt alle vier. Gegen drei nachgebaute Abbildstände durchgespielt.
+
+**Eine Zeile im Protokoll nannte noch den Tunnel.** `app/anmeldung/aktionen.ts`
+riet bei Klartext-HTTP zum «Tunnel aus Phase 6» — den es nicht mehr gibt.
+Jetzt: «davor gehört ein Vorbau, der es liefert.»
