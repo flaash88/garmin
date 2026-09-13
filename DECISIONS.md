@@ -215,3 +215,100 @@ falsch. Ein relativer Pfad `./werkzeug/everything-claude-code` wird dagegen
 anstandslos angenommen und gegen das Projektwurzelverzeichnis aufgelöst.
 `scripts/werkzeugkasten.sh` setzt den Pfad nach jedem Lauf wieder relativ.
 Durch zwei aufeinanderfolgende Läufe geprüft.
+
+---
+
+## Phase 1 — Gerüst und Gestaltung
+
+### E1.1 — Stände des Stacks
+
+Zum Zeitpunkt der Einrichtung jeweils der aktuelle Stand, fest angeheftet:
+Next 16.3.5 (App Router), React 19.3.0, TypeScript 5.9.2 strict,
+Tailwind 4.3.3, Drizzle ORM 0.45.2 mit drizzle-kit 0.31.10, pg 8.16.3,
+Vitest 3.2.4.
+
+Über `strict` hinaus sind `noUncheckedIndexedAccess`, `noImplicitOverride`
+und `exactOptionalPropertyTypes` an. Sie kosten beim Schreiben etwas und
+fangen dafür genau die Fehler ab, die bei Daten aus einer fremden API
+entstehen — fehlende Felder und Zugriffe ins Leere.
+
+### E1.2 — `@font-face` des Entwurfs ist fehlerhaft und wurde berichtigt
+
+**Abweichung, nötig.** Der Entwurf schreibt die Rückfallkette in den
+Familiennamen hinein:
+
+    font-family:'IBM Plex Sans','Helvetica Neue',Helvetica,sans-serif
+
+In einer `@font-face`-Regel ist das kein gültiges CSS — `font-family` nimmt
+dort **einen** Namen, keine Liste. Wörtlich übernommen würde die Schrift nie
+geladen. In `app/globals.css` steht der Name deshalb allein, die
+Rückfallkette steht im Schriftstapel unter `--font-sans` und `--font-mono`.
+Das Ergebnis auf dem Bildschirm ist genau das, was der Entwurf meint.
+
+### E1.3 — Zusammengesetzte Tailwind-Klassen erzeugen keine Regeln
+
+**Eigener Fehler, gefunden und behoben.** Die Farbtafel auf der Startseite
+war zuerst mit <code>bg-${name}</code> geschrieben. Tailwind liest den
+Quelltext als Text und sieht solche Namen nicht — der Build lief durch, die
+Kacheln wären aber leer geblieben. Im gebauten CSS fehlten die zwanzig
+Regeln; nach dem Umbau auf ausgeschriebene Klassennamen sind sie alle da.
+Geprüft mit `grep` gegen `.next/static/chunks/*.css`.
+
+Gilt für die ganze Phase 4: Klassennamen werden nie zusammengesetzt.
+
+### E1.4 — `@theme inline` und gelöschte Standardpalette
+
+Die Farben des Entwurfs stehen unverändert als `:root,[data-thema="hell"]`
+und `[data-thema="dunkel"]` in `app/globals.css` — beide Blöcke wörtlich aus
+`design/Takt.dc.html`, Zeile 17 und 18. `@theme` bildet nur darauf ab:
+
+    --color-grund: var(--grund);
+
+Das `inline` bei `@theme inline` ist der Kern. Ohne es setzt Tailwind den
+Farbwert beim Bauen ein, und der Themenwechsel wäre wirkungslos. Belegt im
+gebauten CSS: `.bg-grund{background-color:var(--grund)}`.
+
+`--color-*: initial` löscht die Standardpalette. Mit einer Probe geprüft:
+`bg-red-500`, `text-blue-600` und `border-slate-300` in eine Datei gesetzt,
+gebaut, im CSS gesucht — null Treffer. Es gibt genau ein Farbvokabular.
+
+### E1.5 — Schriften und Leaflet aus der npm-Registry
+
+`design/assets/fonts/` enthält nur ein README, keine Schriftdateien. Bezogen
+wurden sie aus `@ibm/plex-sans@1.1.0` und `@ibm/plex-mono@2.5.0`, jeweils
+aus `fonts/complete/woff2/`. Die fünf Dateien liegen unter `public/fonts/`
+und tragen genau die Namen, die das README des Entwurfs nennt.
+
+Leaflet 1.9.4 aus `leaflet@1.9.4`, `dist/` nach `public/vendor/leaflet/`
+samt `images/`. Version im Kopf der Datei bestätigt.
+
+Die Registry statt beliebiger URLs, weil die Stände damit überprüfbar
+angeheftet sind. Zur Laufzeit wird nichts nachgeladen.
+
+### E1.6 — Karte: Leaflet liegt, der Baustein folgt in Phase 4
+
+`public/vendor/leaflet/` ist vollständig. Der Kartenbaustein selbst gehört
+zur Aktivitätsansicht und kommt in Phase 4 — samt OSM-Kacheln, Attribution
+nach OSM-Vorgabe, clientseitigem Cache und dem gestalteten Rückfall auf die
+Vektorlinie über Gradnetz. Kein eigener Kachel-Dienst, siehe E0.7.
+
+### E1.7 — `/plan` wird nicht blockierend genutzt
+
+Der Auftrag verlangt `/plan` vor jeder Phase. Der Skill des Plugins endet
+mit „WAIT for user CONFIRM before touching any code". Das widerspricht der
+Vorgabe „Arbeite autonom. Frag nicht nach." aus demselben Auftrag.
+
+Die Autonomie gewinnt: geplant wird, angehalten wird nicht. Unterbrochen
+wird nur bei fehlenden Zugangsdaten oder drohendem Datenverlust — und bei
+einem Hook, der die Arbeit blockiert (E0.3).
+
+### E1.8 — Formatierung liegt zentral und ist geprüft
+
+`lib/format.ts` ist die einzige Stelle für Dezimalkomma, Pace `5:25/km`,
+Datum `TT.MM.JJJJ`, 24-Stunden-Zeit und metrische Einheiten. 22 Tests in
+`lib/format.test.ts`, alle grün.
+
+Zwei Feinheiten, die leicht danebengehen: `pace()` rundet auf die nächste
+Sekunde und trägt den Übertrag, damit aus 359,6 s nicht `5:60/km` wird.
+`mitVorzeichen()` setzt das echte Minuszeichen `−` (U+2212), nicht den
+Bindestrich — der Entwurf schreibt `−1,4`, und ein Test hält das fest.

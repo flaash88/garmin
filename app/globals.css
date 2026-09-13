@@ -1,0 +1,165 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Schriften — lokal, keine externen Aufrufe zur Laufzeit.
+   Der Entwurf schreibt die Rückfallkette in den Familiennamen hinein; das ist
+   kein gültiges CSS und würde das Laden verhindern. Hier steht der Name allein,
+   die Rückfallkette steht unten im Schriftstapel. Siehe DECISIONS.md, E1.2.
+--------------------------------------------------------------------------- */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------------------
+   Farben — wörtlich aus design/Takt.dc.html, Zeile 17 und 18.
+   Diese beiden Regeln sind die Quelle. Nicht verändern, ohne den Entwurf
+   mitzuziehen.
+--------------------------------------------------------------------------- */
+:root,
+[data-thema='hell'] {
+  --grund: #f7f6f4;
+  --flaeche: #ffffff;
+  --flaeche-2: #f1efec;
+  --kontur: #e3e0db;
+  --kontur-stark: #ccc7bf;
+  --text-stark: #17171a;
+  --text: #3c3b3d;
+  --text-leise: #6e6c6a;
+  --text-schwach: #9b9894;
+  --akzent: #0e6572;
+  --akzent-flaeche: #e2f0f2;
+  --akzent-kontur: #b2d6db;
+  --positiv: #3f6b4f;
+  --warnung: #8f6417;
+  --negativ: #9c1f2e;
+  --zone-1: #f0e2d2;
+  --zone-2: #e6c5a3;
+  --zone-3: #dd9f72;
+  --zone-4: #cc6f3f;
+  --zone-5: #a34718;
+}
+
+[data-thema='dunkel'] {
+  --grund: #121213;
+  --flaeche: #1a1a1c;
+  --flaeche-2: #232326;
+  --kontur: #2e2e32;
+  --kontur-stark: #45454c;
+  --text-stark: #f2f1ef;
+  --text: #d3d1cd;
+  --text-leise: #9b9894;
+  --text-schwach: #6e6b68;
+  --akzent: #45aab8;
+  --akzent-flaeche: #0f2b30;
+  --akzent-kontur: #1f4f57;
+  --positiv: #6fa37f;
+  --warnung: #c79a4a;
+  --negativ: #e8677a;
+  --zone-1: #4e4238;
+  --zone-2: #6f5640;
+  --zone-3: #97704a;
+  --zone-4: #c28c55;
+  --zone-5: #e5a868;
+}
+
+/* ---------------------------------------------------------------------------
+   Tailwind-Abbildung. 'inline' sorgt dafür, dass die Hilfsklassen var(--…)
+   ausgeben statt den Wert einzusetzen — nur so wirkt der Themenwechsel.
+   --color-*: initial löscht die Tailwind-Standardpalette. Es gibt genau ein
+   Farbvokabular, das deutsche.
+--------------------------------------------------------------------------- */
+@theme inline {
+  --color-*: initial;
+
+  --color-grund: var(--grund);
+  --color-flaeche: var(--flaeche);
+  --color-flaeche-2: var(--flaeche-2);
+  --color-kontur: var(--kontur);
+  --color-kontur-stark: var(--kontur-stark);
+  --color-text-stark: var(--text-stark);
+  --color-text: var(--text);
+  --color-text-leise: var(--text-leise);
+  --color-text-schwach: var(--text-schwach);
+  --color-akzent: var(--akzent);
+  --color-akzent-flaeche: var(--akzent-flaeche);
+  --color-akzent-kontur: var(--akzent-kontur);
+  --color-positiv: var(--positiv);
+  --color-warnung: var(--warnung);
+  --color-negativ: var(--negativ);
+  --color-zone-1: var(--zone-1);
+  --color-zone-2: var(--zone-2);
+  --color-zone-3: var(--zone-3);
+  --color-zone-4: var(--zone-4);
+  --color-zone-5: var(--zone-5);
+
+  --font-sans: 'IBM Plex Sans', 'Helvetica Neue', Helvetica, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+
+  /* Basisraster 4 px */
+  --spacing: 0.25rem;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html[data-thema='dunkel'] {
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    background: var(--grund);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Berührungsziele ab 44 px und Safe-Area-Insets — mobil hat Vorrang. */
+  @supports (padding: env(safe-area-inset-bottom)) {
+    body {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}
+
+/* Beschriftungen des Entwurfs: Mono, versal, gesperrt. */
+@utility marke {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
