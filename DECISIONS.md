@@ -312,3 +312,31 @@ Zwei Feinheiten, die leicht danebengehen: `pace()` rundet auf die nächste
 Sekunde und trägt den Übertrag, damit aus 359,6 s nicht `5:60/km` wird.
 `mitVorzeichen()` setzt das echte Minuszeichen `−` (U+2212), nicht den
 Bindestrich — der Entwurf schreibt `−1,4`, und ein Test hält das fest.
+
+### E1.9 — Drei Befunde aus `/code-review`, alle behoben
+
+Die Prüfung nach der Phase fand drei echte Fehler. Alle drei sind behoben
+und durch Tests abgesichert; die Testzahl steigt von 22 auf 24.
+
+**`lib/db/index.ts` — Pool ohne `error`-Zuhörer.** Ein Fehler auf einer
+ruhenden Verbindung, etwa nach einem Neustart von PostgreSQL, wird in Node
+zu einem unbehandelten Ereignis und beendet den Serverprozess. Jetzt hängt
+ein Zuhörer daran, der den Fehler meldet; die Verbindung ersetzt der Pool
+von selbst. Der Zuhörer wird nur einmal gesetzt, sonst sammelte er sich im
+Entwicklungsbetrieb über den zwischengespeicherten Pool an.
+
+**`lib/format.ts` — `strecke()` verglich vor dem Runden.** 999,6 m ergaben
+`1.000 m` statt `1,0 km`. Jetzt wird erst auf ganze Meter gerundet und dann
+die Grenze geprüft. Zwei Tests halten die Kante fest: 999,6 und 999,4.
+
+**`lib/format.ts` — Datum ohne Zeitanteil wurde als UTC gelesen.** Die
+Spalte `wellness.tag` kommt aus Postgres als `2026-09-13` zurück.
+`new Date()` liest das als Mitternacht UTC, die Ausgabe nutzt aber die
+örtlichen Getter — westlich von Greenwich wäre durchgehend der Vortag
+erschienen. Unter UTC und Europe/Berlin fiel das nicht auf, deshalb war es
+ungetestet. Solche Angaben werden jetzt als örtliches Datum aufgebaut. Die
+Testreihe läuft zur Probe unter `TZ=America/New_York` und `TZ=Europe/Vienna`
+durch, beide grün.
+
+Der dritte Befund ist der lehrreiche: Er wäre erst in Phase 3 aufgefallen,
+und dort als falsche Zahl im Wochenbriefing, nicht als Fehler.

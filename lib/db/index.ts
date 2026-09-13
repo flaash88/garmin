@@ -17,6 +17,16 @@ function verbindung(): string {
 const global_ = globalThis as unknown as { taktPool?: Pool }
 
 const pool = global_.taktPool ?? new Pool({ connectionString: verbindung() })
+
+// Ohne diesen Zuhörer beendet ein Fehler auf einer ruhenden Verbindung — ein
+// Neustart von PostgreSQL genügt — den Serverprozess. Der Pool ersetzt die
+// Verbindung von selbst, gemeldet wird der Fehler trotzdem.
+if (pool.listenerCount('error') === 0) {
+  pool.on('error', (fehler) => {
+    console.error('[takt] Fehler auf ruhender Datenbankverbindung:', fehler)
+  })
+}
+
 if (process.env.NODE_ENV !== 'production') global_.taktPool = pool
 
 export const db = drizzle(pool, { schema })

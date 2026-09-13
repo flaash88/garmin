@@ -33,6 +33,12 @@ describe('strecke', () => {
     expect(strecke(849.6)).toBe('850 m')
   })
 
+  it('rundet vor der Grenze, nicht danach', () => {
+    // 999,6 m sind gerundet 1000 m. Frueher kam hier '1.000 m' heraus.
+    expect(strecke(999.6)).toBe('1,0 km')
+    expect(strecke(999.4)).toBe('999 m')
+  })
+
   it('weist negative Werte ab', () => {
     expect(strecke(-1)).toBe('–')
   })
@@ -84,6 +90,14 @@ describe('datum und Zeit', () => {
 
   it('setzt Datum und Zeit zusammen', () => {
     expect(datumZeit(d)).toBe('13.09.2026, 06:45')
+  })
+
+  it('liest ein Datum ohne Zeitanteil ortszeitlich', () => {
+    // Die Spalte wellness.tag kommt als '2026-09-13' zurueck. Ueber
+    // new Date() waere das Mitternacht UTC und westlich von Greenwich
+    // der Vortag.
+    expect(datum('2026-09-13')).toBe('13.09.2026')
+    expect(datum('2026-01-01')).toBe('01.01.2026')
   })
 
   it('faengt ungueltige Angaben ab', () => {
