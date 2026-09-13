@@ -340,3 +340,84 @@ durch, beide grün.
 
 Der dritte Befund ist der lehrreiche: Er wäre erst in Phase 3 aufgefallen,
 und dort als falsche Zahl im Wochenbriefing, nicht als Fehler.
+
+---
+
+## Phase 2 — Anmeldung
+
+### E2.1 — `@node-rs/argon2` statt `argon2`
+
+Das native `argon2` will beim Installieren übersetzt werden und braucht dafür
+eine Werkzeugkette im Bild. `@node-rs/argon2@2.2.1` bringt vorgebaute
+Binärdateien mit. Im Test belegt: der erzeugte Hash beginnt mit
+`$argon2id$`, es ist also wirklich argon2id und nicht argon2i oder argon2d.
+
+Werte nach OWASP-Empfehlung: 19 MiB Speicher, drei Durchgänge, ein Nebenlauf.
+Dieselben Werte in `scripts/hash.ts` und im Test, damit beide nicht
+auseinanderlaufen.
+
+### E2.2 — Die Middleware prüft nur das Cookie, nie ein Passwort
+
+**Zwang aus der Laufzeit.** Die Middleware von Next läuft in der
+Edge-Laufzeit. `@node-rs/argon2` ist nativ und dort nicht verfügbar. Die
+Aufteilung ist deshalb:
+
+- Middleware: prüft ausschließlich die Signatur und den Ablauf des Cookies.
+- Server-Aktion (Node): prüft das Passwort, setzt das Cookie.
+
+Aus demselben Grund ist `lib/anmeldung/sitzung.ts` ohne Bibliothek und
+ausschließlich über die Web Crypto API geschrieben — derselbe Code läuft in
+beiden Laufzeiten. `node:crypto` ginge in der Middleware nicht.
+
+Der Signaturvergleich läuft in gleichbleibender Zeit, damit sich die
+Signatur nicht Byte für Byte erraten lässt.
+
+### E2.3 — Die Verzögerung gilt auch für das richtige Passwort
+
+Sonst verriete die Antwortzeit, ob das Passwort stimmte: eine schnelle
+Antwort hieße „richtig", eine langsame „falsch". Gewartet wird deshalb
+**vor** der Prüfung, unabhängig vom Ausgang.
+
+Staffelung wie beauftragt: die ersten beiden Versuche ohne Verzug, ab dem
+dritten 1 s, dann 2 s, 4 s, 8 s … gedeckelt bei 30 s. Nach einer
+Viertelstunde ohne Fehlversuch fängt die Zählung von vorn an, sonst bliebe
+eine IP nach einem vertippten Abend dauerhaft gestraft.
+
+Der Zählerstand verlässt `lib/anmeldung/versuche.ts` nicht. Nach außen gibt
+es genau eine Meldung: „Passwort falsch". Das „zweiter von fünf Versuchen"
+aus dem Entwurf ist bewusst nicht übernommen — geprüft, es kommt in der
+ausgelieferten Seite nicht vor.
+
+### E2.4 — „Letzter Abgleich" aus dem Entwurf vorerst weggelassen
+
+Der Entwurf zeigt unter dem Anmeldeformular „Letzter Abgleich 13.09.2026,
+19:12". Das ist Beispieldatum, und einen Abgleich gibt es vor Phase 3 nicht.
+Eine erfundene Zeile vor der Anmeldung wäre zudem eine Auskunft an
+Unangemeldete. Die Zeile kommt in Phase 3, wenn es einen echten Stand gibt.
+„Die Sitzung bleibt 30 Tage bestehen." bleibt, die stimmt.
+
+### E2.5 — `Algorithm` ist ein `const enum`
+
+Kleinigkeit, kostet sonst Zeit: `@node-rs/argon2` erklärt `Algorithm` als
+`declare const enum`. Unter `isolatedModules` — und das ist bei Next gesetzt
+— lässt sich so etwas nicht als Wert einführen. In `scripts/hash.ts` steht
+deshalb die Zahl mit Kommentar: Argon2d 0, Argon2i 1, Argon2id 2.
+
+### E2.6 — Gegen den laufenden Server geprüft, nicht nur gebaut
+
+`pnpm start` auf Port 3111, sieben Abfragen mit `curl`:
+
+| Prüfung | Erwartet | Ergebnis |
+|---|---|---|
+| `/api/health` ohne Cookie | 200 | 200, JSON |
+| `/` ohne Cookie | Umleitung | 307 → `/anmeldung` |
+| `/anmeldung` ohne Cookie | 200 | 200 |
+| `/` mit gültigem Cookie | 200 | 200 |
+| `/` mit abgelaufenem Cookie | Umleitung | 307 → `/anmeldung` |
+| `/` mit verfälschter Signatur | Umleitung | 307 → `/anmeldung` |
+| Schriften und Leaflet | 200 | 200 |
+
+Dazu der Wortlaut der ausgelieferten Seite: die fünf erwarteten deutschen
+Zeichenketten sind da, „Versuch" und „Letzter Abgleich" kommen nicht vor,
+und die Suche nach `Login`, `Password`, `Sign in`, `Submit`, `Error` und
+`Loading` bleibt leer.
