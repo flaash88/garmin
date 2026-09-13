@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { Markdown } from './markdown'
 
 /**
  * Antwortstrom des Coach. Jeder Werkzeugaufruf erscheint als einklappbare
@@ -255,12 +256,12 @@ export function CoachStrom() {
                 ) : null}
 
                 {n.text.length > 0 ? (
-                  <p className="mt-3 text-[13.5px] leading-relaxed whitespace-pre-line text-text">
-                    {n.text}
+                  <div className="mt-3">
+                    <Markdown text={n.text} />
                     {laeuft && i === verlauf.length - 1 ? (
-                      <span className="ml-0.5 inline-block h-[1.1em] w-[2px] animate-pulse bg-akzent align-text-bottom" />
+                      <span className="mt-1 inline-block h-[1.1em] w-[2px] animate-pulse bg-akzent align-text-bottom" />
                     ) : null}
-                  </p>
+                  </div>
                 ) : null}
 
                 {n.zugang ? (

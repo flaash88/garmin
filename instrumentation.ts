@@ -34,6 +34,19 @@ export async function register(): Promise<void> {
     console.log(`[takt] Agent-Binärdatei gefunden (${binaer?.quelle}).`)
   }
 
+  /*
+   * Die Rolle des Coach. Ohne sie scheitert sql_abfrage — im Betrieb fiel
+   * das erst im Chat auf, weil die Rolle nie angelegt worden war.
+   */
+  const { coachRolleStartmeldung } = await import('@/lib/coach/sql-ausfuehren')
+  try {
+    const rolle = await coachRolleStartmeldung()
+    if (rolle) console.warn(`[takt] ${rolle}`)
+    else console.log('[takt] Coach-Rolle takt_coach: Verbindung steht.')
+  } catch (fehler) {
+    console.warn('[takt] Coach-Rolle nicht prüfbar:', fehler)
+  }
+
   // Die übrigen Pflichtwerte gleich mit. Fehlt einer, steht es beim Start da
   // und nicht in einem Fehler mitten im Betrieb.
   const pflicht = ['TAKT_DATENBANK_URL', 'TAKT_SITZUNG_SECRET', 'TAKT_PASSWORT_HASH']

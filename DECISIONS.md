@@ -1541,3 +1541,113 @@ Guillemet-Paar an, innen ist keines übrig.
 Wie die Probe auszuführen und zu bewerten ist, steht im README und im Kopf des
 Skripts. Der Ausgang bleibt offen, bis sie mit einem gültigen Token durch die
 Oberfläche gelaufen ist.
+
+---
+
+## Phase 10 — Befunde aus dem laufenden Betrieb
+
+### E10.1 — Die Coach-Rolle wurde nie angelegt
+
+**Befund.** `password authentication failed for user takt_coach`. Die Rolle
+entstand nur in einem Schritt der Anleitung — und einen Schritt in einer
+Anleitung übersieht man.
+
+Der Dienst `wanderung` führt jetzt `datenbank/hochfahren.sh` aus, drei
+Schritte, alle idempotent:
+
+1. Wanderungen einspielen
+2. Auswertungsschema und Rolle `takt_coach` anlegen, mit dem Passwort aus der
+   Umgebung. Das ist zugleich die Quelle der Wahrheit: ein `ALTER ROLE …
+   PASSWORD` gleicht ein abweichendes Passwort an, statt daran zu scheitern.
+3. **Verbindung als `takt_coach` prüfen.** Steht sie nicht, endet der Dienst
+   mit Code 1 und der Verbund fährt gar nicht erst hoch — besser als ein
+   laufender Coach, der beim ersten SQL scheitert.
+
+Fehlt `TAKT_COACH_PASSWORT`, wird Schritt 2 und 3 übersprungen und gemeldet:
+der Coach kann dann kein SQL, alles andere läuft.
+
+Dazu eine Prüfung in der Anwendung selbst — `instrumentation.ts` und der
+Zeitplan melden beim Hochfahren, ob die Verbindung steht.
+
+Gegen die echte Datenbank in vier Fällen geprüft: frische Datenbank ohne
+Rolle, zweiter Lauf, abweichendes Passwort in der Rolle, fehlendes
+`TAKT_COACH_PASSWORT`.
+
+### E10.2 — Verläufe kamen ohne Ortspunkte
+
+**Befund.** «16 Reihen · 0 Ortspunkte», die Streckenseite blieb leer.
+
+Zwei Ursachen, beide behoben:
+
+**Der Abruf fragte nichts an.** `/activity/{id}/streams` lief ohne `types`,
+und die Vorauswahl von intervals.icu enthielt die Ortsdaten nicht. Jetzt wird
+`latlng` ausdrücklich angefordert, zusammen mit `lat` und `lng` für ältere
+Stände.
+
+**Die Auswertung war zu eng.** Sie las die Reihe nur über `type` und die
+Werte nur über `data`. Heißt ein Feld anders, kam still nichts zurück. Jetzt
+werden `type`/`name`/`key` und `data`/`values`/`stream` gelesen, Paare
+`[Breite, Länge]` **und** Objekte `{lat, lng}`, dazu `position_lat` und
+`position_long`. Und: ein leeres `latlng` verdeckt die getrennten Reihen nicht
+mehr — vorher hätte es sie verdeckt.
+
+**Alte Zwischenspeicher.** Was vor der Änderung geholt wurde, hat keine
+Ortsdaten und behielte sie nie. Die Tabelle `verlaeufe` trägt deshalb eine
+Spalte `fassung`; Verläufe unterhalb der aktuellen werden beim nächsten Öffnen
+einmal erneuert. Scheitert die Erneuerung, wird der alte Stand gezeigt statt
+gar keiner.
+
+**Und wenn es doch nicht passt:** die Aktivitätsseite zeigt bei fehlenden
+Ortspunkten, **welche Reihen ankamen** und welche Felder der erste Satz trägt.
+Ein leerer Kartenbereich sagt damit, woran es liegt, statt nur leer zu sein.
+Bei Läufen auf dem Band ist das die richtige Antwort.
+
+### E10.3 — Markdown wurde roh gezeigt
+
+**Befund.** Der Coach schreibt `**Einordnung**`, die Oberfläche zeigte die
+Sternchen.
+
+`lib/markdown.ts` zerlegt den Text in Bausteine, `komponenten/markdown.tsx`
+baut daraus React-Elemente. Absätze, Überschriften, Aufzählungen, nummerierte
+Listen, fett, kursiv, Code und Codeblöcke.
+
+**Kein HTML-Durchlass, und zwar mit Absicht.** Die Antwort kommt von einem
+Modell, das Daten des Athleten gelesen hat — und darin kann Text stehen, den
+jemand eingeschleust hat (E5.5). Ein Wandler, der rohes HTML übernimmt, machte
+daraus eine Lücke. `dangerouslySetInnerHTML` kommt nirgends vor; jede
+Zeichenkette landet als Textknoten. Ein Test hält fest, dass
+`<img src=x onerror=…>` als Text erscheint.
+
+Zwei Feinheiten: Code wird vor Auszeichnung gesucht, damit ein Sternchen in
+`…` Text bleibt; und ein unbeendeter Codeblock wird trotzdem gezeigt, weil das
+beim Streamen der Normalfall ist.
+
+### E10.4 — Sonne und Mond statt Textknopf
+
+Der Knopf zeigt, **wohin es geht**, nicht wo man ist: bei hellem Schema den
+Mond. Die Sonne ist wörtlich aus dem Entwurf; einen Mond zeigt der Entwurf
+nicht, der ist im selben Maß gehalten — 16er-Raster, Strichstärke 1,3, keine
+Füllung. Vor dem ersten Effekt bleibt der Knopf leer, damit nichts aufblitzt.
+
+### E10.5 — Abgleich von Hand, mit Rückmeldung
+
+Ein Knopf in der Kopfzeile neben der Zeitangabe. Während des Laufs dreht sich
+das Symbol, danach erscheint eine Meldung mit den Zahlen — oder mit den
+Fehlern, dann in `negativ` gerahmt.
+
+**Mehrfaches Klicken wird zweimal abgefangen.** Der Knopf sperrt sich selbst,
+und `einmalZugleich()` im Serverprozess hält den laufenden Vorgang fest. Der
+Knopf allein genügte nicht: zwei Reiter nebeneinander wissen nichts
+voneinander, und ein Neuladen mitten im Lauf setzt ihn zurück. Der zweite
+Aufruf bekommt **dasselbe Versprechen** zurück, keine Absage — wer klickt,
+will ein Ergebnis sehen.
+
+Der Versuch, das gegen den laufenden Server zu prüfen, war zunächst
+untauglich: ohne ICU-Schlüssel endet ein Lauf zu schnell, die beiden Anfragen
+überlappten gar nicht, und beide meldeten zu Recht «gestartet». Deshalb liegt
+die Sperre jetzt in einer eigenen Funktion mit sechs Tests, darunter drei
+gleichzeitige Aufrufe, ein Fehlschlag mit Aufräumen und die Weitergabe des
+Fehlschlags an alle Wartenden.
+
+Die Route antwortet jetzt mit JSON statt einer Umleitung. Ein Formular, das
+noch auf sie zeigte, hätte auf eine JSON-Seite navigiert — ersetzt.

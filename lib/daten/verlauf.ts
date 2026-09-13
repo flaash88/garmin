@@ -7,6 +7,15 @@ import { istSatz, type Rohsatz } from '@/lib/icu/felder'
 import type { Punkt } from '@/lib/analyse/strecken'
 
 /**
+ * Fassung des Abrufs.
+ *
+ * 1 — ohne `types`; intervals.icu lieferte die Vorauswahl, und darin fehlten
+ *     die Ortsdaten. Solche Verläufe werden einmal erneuert.
+ * 2 — mit ausdrücklich angeforderten Reihen, `latlng` voran.
+ */
+export const VERLAUF_FASSUNG = 2
+
+/**
  * Verläufe sind groß. Sie werden erst beim ersten Öffnen einer Aktivität
  * geholt und danach lokal gehalten.
  */
@@ -19,8 +28,11 @@ export async function verlaufBesorgen(
     .where(eq(verlaeufe.aktivitaetId, aktivitaetId))
     .limit(1)
 
-  const zwischengespeichert = vorhanden[0]?.daten
-  if (Array.isArray(zwischengespeichert)) {
+  const zeile = vorhanden[0]
+  const zwischengespeichert = zeile?.daten
+  const aktuell = (zeile?.fassung ?? 0) >= VERLAUF_FASSUNG
+
+  if (aktuell && Array.isArray(zwischengespeichert)) {
     return { daten: zwischengespeichert as Rohsatz[], fehler: null }
   }
 
@@ -29,31 +41,87 @@ export async function verlaufBesorgen(
     const daten = await verlaufHolen(zugang, aktivitaetId)
     await datenbank()
       .insert(verlaeufe)
-      .values({ aktivitaetId, daten })
+      .values({ aktivitaetId, daten, fassung: VERLAUF_FASSUNG })
       .onConflictDoUpdate({
         target: verlaeufe.aktivitaetId,
-        set: { daten, geholtAm: new Date() },
+        set: { daten, fassung: VERLAUF_FASSUNG, geholtAm: new Date() },
       })
     return { daten, fehler: null }
   } catch (fehler) {
-    // Ohne Verlauf bleibt die Seite brauchbar: Kopfzahlen und Runden stehen
-    // in der Aktivität selbst. Nur die Karte fehlt dann.
-    return {
-      daten: [],
-      fehler: fehler instanceof Error ? fehler.message : 'unbekannter Fehler',
+    /*
+     * Ohne Verlauf bleibt die Seite brauchbar: Kopfzahlen und Runden stehen
+     * in der Aktivität selbst. Nur die Karte fehlt dann.
+     *
+     * Liegt ein alter Zwischenspeicher vor und scheitert nur die Erneuerung,
+     * wird der alte gezeigt — lieber eine Karte von gestern als gar keine.
+     */
+    const text = fehler instanceof Error ? fehler.message : 'unbekannter Fehler'
+    if (Array.isArray(zwischengespeichert)) {
+      return { daten: zwischengespeichert as Rohsatz[], fehler: text }
     }
+    return { daten: [], fehler: text }
   }
 }
 
+/**
+ * Name einer Reihe. intervals.icu führt ihn je nach Stand unter `type` oder
+ * unter `name`.
+ */
+function reihenname(satz: Rohsatz): string | null {
+  for (const schluessel of ['type', 'name', 'key']) {
+    const wert = satz[schluessel]
+    if (typeof wert === 'string' && wert.length > 0) return wert
+  }
+  return null
+}
+
+/** Werte einer Reihe. Ebenso: `data` oder `values`. */
+function reihenwerte(satz: Rohsatz): unknown[] | null {
+  for (const schluessel of ['data', 'values', 'stream']) {
+    const wert = satz[schluessel]
+    if (Array.isArray(wert)) return wert
+  }
+  return null
+}
+
 function reihe(daten: readonly Rohsatz[], ...namen: string[]): unknown[] | null {
+  const gesucht = namen.map((n) => n.toLowerCase())
   for (const satz of daten) {
-    const typ = satz['type']
-    if (typeof typ === 'string' && namen.includes(typ)) {
-      const werte = satz['data']
-      if (Array.isArray(werte)) return werte
+    const name = reihenname(satz)
+    if (name && gesucht.includes(name.toLowerCase())) {
+      const werte = reihenwerte(satz)
+      if (werte) return werte
     }
   }
   return null
+}
+
+export interface Verlaufsdiagnose {
+  /** Namen der Reihen, wie sie ankamen. */
+  reihen: string[]
+  /** Reihen, deren Namen sich nicht lesen liess — dann stimmt die Form nicht. */
+  ohneNamen: number
+  /** Schlüssel des ersten Satzes, zum Nachsehen, wenn nichts passt. */
+  schluesselDesErsten: string[]
+}
+
+/**
+ * Was tatsächlich ankam. Wird gezeigt, wenn keine Ortspunkte gefunden wurden —
+ * damit ein leerer Kartenbereich sagt, woran es liegt, statt nur leer zu sein.
+ */
+export function verlaufsdiagnose(daten: readonly Rohsatz[]): Verlaufsdiagnose {
+  const reihen: string[] = []
+  let ohneNamen = 0
+  for (const satz of daten) {
+    const name = reihenname(satz)
+    if (name) reihen.push(name)
+    else ohneNamen += 1
+  }
+  return {
+    reihen,
+    ohneNamen,
+    schluesselDesErsten: daten[0] ? Object.keys(daten[0]) : [],
+  }
 }
 
 /**
@@ -61,16 +129,34 @@ function reihe(daten: readonly Rohsatz[], ...namen: string[]): unknown[] | null 
  * als Paare unter `latlng` oder getrennt als `lat` und `lng`.
  */
 export function spurAusVerlauf(daten: readonly Rohsatz[]): Punkt[] {
-  const paare = reihe(daten, 'latlng')
+  const paare = reihe(daten, 'latlng', 'latLng', 'position', 'coordinates')
   if (paare) {
-    return paare
-      .filter((p): p is [number, number] => Array.isArray(p) && p.length >= 2)
-      .filter(([b, l]) => Number.isFinite(b) && Number.isFinite(l))
-      .map(([breite, laenge]) => ({ breite, laenge }))
+    const punkte: Punkt[] = []
+    for (const eintrag of paare) {
+      // Als Paar [Breite, Länge] …
+      if (Array.isArray(eintrag) && eintrag.length >= 2) {
+        const [b, l] = eintrag
+        if (typeof b === 'number' && typeof l === 'number' &&
+            Number.isFinite(b) && Number.isFinite(l)) {
+          punkte.push({ breite: b, laenge: l })
+        }
+        continue
+      }
+      // … oder als Objekt {lat, lng}. Beides kommt vor.
+      if (istSatz(eintrag)) {
+        const b = eintrag['lat'] ?? eintrag['latitude']
+        const l = eintrag['lng'] ?? eintrag['lon'] ?? eintrag['longitude']
+        if (typeof b === 'number' && typeof l === 'number' &&
+            Number.isFinite(b) && Number.isFinite(l)) {
+          punkte.push({ breite: b, laenge: l })
+        }
+      }
+    }
+    if (punkte.length > 0) return punkte
   }
 
-  const breiten = reihe(daten, 'lat', 'latitude')
-  const laengen = reihe(daten, 'lng', 'lon', 'longitude')
+  const breiten = reihe(daten, 'lat', 'latitude', 'position_lat')
+  const laengen = reihe(daten, 'lng', 'lon', 'long', 'longitude', 'position_long')
   if (!breiten || !laengen) return []
 
   const spur: Punkt[] = []

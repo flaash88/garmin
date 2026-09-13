@@ -3,7 +3,12 @@ import { notFound } from 'next/navigation'
 import { Karte } from '@/komponenten/karte'
 import { Kachel } from '@/komponenten/zustaende'
 import { aktivitaet, streckeZurAktivitaet } from '@/lib/daten/aktivitaeten'
-import { rundenAusRohdaten, spurAusVerlauf, verlaufBesorgen } from '@/lib/daten/verlauf'
+import {
+  rundenAusRohdaten,
+  spurAusVerlauf,
+  verlaufBesorgen,
+  verlaufsdiagnose,
+} from '@/lib/daten/verlauf'
 import { splitGuete, verfall } from '@/lib/analyse/splits'
 import { ausduennen } from '@/lib/analyse/strecken'
 import { datum, dauer, mitVorzeichen, pace, strecke, uhrzeit, zahl } from '@/lib/format'
@@ -21,6 +26,9 @@ export default async function AktivitaetDetail({
   // Ausgedünnt, bevor die Spur in den Client geht: eine Stunde Aufzeichnung
   // sind über zehntausend Punkte, und die Karte zeigt davon nur den Verlauf.
   const spur = ausduennen(spurAusVerlauf(daten))
+  // Kamen Reihen an, aber keine Ortspunkte, sagt die Seite welche — sonst
+  // bliebe der Kartenbereich nur leer und niemand wüsste, woran es liegt.
+  const diagnose = spur.length === 0 && daten.length > 0 ? verlaufsdiagnose(daten) : null
   const runden = rundenAusRohdaten(a.rohdaten)
   const zugeordnet = await streckeZurAktivitaet(id)
 
@@ -93,6 +101,28 @@ export default async function AktivitaetDetail({
       ) : null}
 
       <Karte spur={spur} />
+
+      {diagnose ? (
+        <div className="border border-kontur bg-flaeche p-4">
+          <div className="flex items-center gap-[9px]">
+            <span className="size-1.5 flex-none rounded-full bg-warnung" />
+            <span className="marke text-[10px] text-warnung">Keine Ortspunkte</span>
+          </div>
+          <p className="mt-2.5 text-[13px] leading-relaxed text-text">
+            Der Verlauf kam an, enthält aber keine Ortsdaten. Bei Läufen auf dem
+            Band ist das richtig. Sonst führt intervals.icu die Reihe unter
+            einem Namen, den Takt noch nicht kennt.
+          </p>
+          <p className="mt-3 font-mono text-[11px] leading-relaxed break-words text-text-schwach">
+            Angekommene Reihen: {diagnose.reihen.join(', ') || '—'}
+            {diagnose.ohneNamen > 0
+              ? ` · ${zahl(diagnose.ohneNamen)} ohne lesbaren Namen`
+              : ''}
+            <br />
+            Felder des ersten Satzes: {diagnose.schluesselDesErsten.join(', ') || '—'}
+          </p>
+        </div>
+      ) : null}
 
       {runden.length > 0 ? (
         <Kachel

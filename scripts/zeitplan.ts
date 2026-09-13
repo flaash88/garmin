@@ -86,6 +86,13 @@ const binaerText = binaerdateiStartmeldung(binaer)
 if (binaerText) for (const zeile of binaerText.split('\n')) melden(zeile)
 else melden(`Agent-Binärdatei gefunden (${binaer?.quelle}).`)
 
+void (async () => {
+  const { coachRolleStartmeldung } = await import('@/lib/coach/sql-ausfuehren')
+  const rolle = await coachRolleStartmeldung()
+  if (rolle) for (const zeile of rolle.split('\n')) melden(zeile)
+  else melden('Coach-Rolle takt_coach: Verbindung steht.')
+})()
+
 // Einmal gleich zu Beginn, damit ein Neustart nicht eine Stunde kostet.
 void abgleichen()
 void briefen()

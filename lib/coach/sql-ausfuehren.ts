@@ -89,3 +89,32 @@ export async function sqlAusfuehren(roh: string): Promise<AbfrageErgebnis> {
     verbindung.release()
   }
 }
+
+/**
+ * Prüft beim Hochfahren, ob die Verbindung als `takt_coach` steht.
+ *
+ * Im Betrieb fiel das erst im Chat auf — «password authentication failed for
+ * user takt_coach» —, weil die Rolle nie angelegt worden war. Jetzt steht es
+ * beim Start im Protokoll.
+ */
+export async function coachRolleStartmeldung(): Promise<string | null> {
+  if (!process.env['TAKT_SQL_ROLLE_URL']) {
+    return (
+      'TAKT_SQL_ROLLE_URL ist nicht gesetzt. Der Coach kann kein SQL abfragen, ' +
+      'alles andere läuft.\n' +
+      '  Anlegen mit: TAKT_COACH_PASSWORT=… bash datenbank/einrichten.sh'
+    )
+  }
+
+  try {
+    await sqlAusfuehren('select 1 as pruefung')
+    return null
+  } catch (fehler) {
+    const text = fehler instanceof Error ? fehler.message : 'unbekannter Fehler'
+    return (
+      `Die Verbindung als takt_coach steht nicht: ${text}\n` +
+      '  Der Coach wird bei sql_abfrage scheitern; die übrigen Werkzeuge laufen.\n' +
+      '  Rolle anlegen oder Passwort angleichen: datenbank/hochfahren.sh'
+    )
+  }
+}

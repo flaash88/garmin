@@ -1,0 +1,1 @@
+ALTER TABLE "verlaeufe" ADD COLUMN "fassung" integer DEFAULT 1 NOT NULL;

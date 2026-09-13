@@ -47,12 +47,12 @@ services:
     expose:
       - '5432'
 
-  # Einmaliger Lauf. Spielt die Wanderungen ein und endet.
+  # Einmaliger Lauf vor allem anderen. Spielt die Wanderungen ein, legt das
+  # Auswertungsschema und die Rolle takt_coach an und prüft, dass die
+  # Verbindung mit dieser Rolle steht. Danach endet er.
   #
-  # Vor der ersten Inbetriebnahme lief das nicht von selbst: das Schema blieb
-  # leer, und jede Abfrage scheiterte. Ein eigener Dienst statt eines Schritts
-  # im Webdienst, weil die Wanderung genau einmal laufen soll — nicht in jedem
-  # Prozess, der hochfährt.
+  # Ein eigener Dienst statt eines Schritts im Webdienst, weil das genau
+  # einmal laufen soll — nicht in jedem Prozess, der hochfährt.
   wanderung:
     build:
       context: .
@@ -62,8 +62,9 @@ services:
         condition: service_healthy
     environment:
       TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
+      TAKT_COACH_PASSWORT: ${TAKT_COACH_PASSWORT:-}
       TZ: ${TZ:-Europe/Vienna}
-    command: ['node_modules/.bin/drizzle-kit', 'migrate']
+    command: ['sh', 'datenbank/hochfahren.sh']
     restart: 'no'
 
   takt:

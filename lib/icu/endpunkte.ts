@@ -40,12 +40,39 @@ export async function aktivitaetenHolen(
   return Array.isArray(antwort) ? (antwort as Rohsatz[]) : []
 }
 
+/**
+ * Reihen, die Takt aus einem Verlauf braucht.
+ *
+ * `latlng` steht vorn und wird ausdrücklich angefordert: ohne `types` liefert
+ * intervals.icu die Vorauswahl, und in der fehlten die Ortsdaten — im Betrieb
+ * kamen «16 Reihen · 0 Ortspunkte» an, und die Streckenseite blieb leer.
+ * Siehe DECISIONS.md, E10.2.
+ *
+ * `lat` und `lng` stehen zusätzlich drin, weil ältere Stände sie getrennt
+ * führen. Was es nicht gibt, lässt intervals.icu einfach weg.
+ */
+export const VERLAUF_REIHEN = [
+  'latlng',
+  'lat',
+  'lng',
+  'time',
+  'distance',
+  'altitude',
+  'heartrate',
+  'velocity_smooth',
+  'pace',
+  'cadence',
+  'power',
+] as const
+
 /** Verläufe sind groß und werden nur bei Bedarf geholt, danach lokal gehalten. */
 export async function verlaufHolen(
   zugang: IcuZugang,
   aktivitaetId: string,
 ): Promise<Rohsatz[]> {
-  const antwort = await icuHolen<unknown>(zugang, `/activity/${aktivitaetId}/streams`)
+  const antwort = await icuHolen<unknown>(zugang, `/activity/${aktivitaetId}/streams`, {
+    suchwerte: { types: VERLAUF_REIHEN.join(',') },
+  })
   return Array.isArray(antwort) ? (antwort as Rohsatz[]) : []
 }
 

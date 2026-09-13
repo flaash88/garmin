@@ -1,6 +1,7 @@
 import { ThemaUmschalter } from './thema-umschalter'
 import { Suche } from './suche'
 import { AbgleichStand } from './abgleich-stand'
+import { AbgleichKnopf } from './abgleich-knopf'
 
 /**
  * Kopfzeile am Schreibtisch, 60 px, wie im Entwurf. Am Telefon trägt jede
@@ -12,6 +13,7 @@ export function Kopfzeile() {
       <Suche />
       <div className="ml-auto flex items-center gap-2.5">
         <AbgleichStand />
+        <AbgleichKnopf />
         <ThemaUmschalter />
       </div>
     </header>

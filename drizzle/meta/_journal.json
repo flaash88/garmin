@@ -15,6 +15,13 @@
       "when": 1789310645140,
       "tag": "0001_little_tempest",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789318052511,
+      "tag": "0002_curious_khan",
+      "breakpoints": true
     }
   ]
 }

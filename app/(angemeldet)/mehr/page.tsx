@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Route } from 'next'
+import { AbgleichKnopf } from '@/komponenten/abgleich-knopf'
 import { ThemaUmschalter } from '@/komponenten/thema-umschalter'
 import { Kachel } from '@/komponenten/zustaende'
 import { letzterAbgleich } from '@/lib/daten/abgleich'
@@ -96,14 +97,10 @@ export default async function Mehr() {
           </p>
         ) : null}
 
-        <form action="/api/abgleich" method="post" className="mt-5">
-          <button
-            type="submit"
-            className="inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-[2px] bg-text-stark px-4 text-[14px] font-medium text-grund"
-          >
-            Jetzt abgleichen
-          </button>
-        </form>
+        <div className="mt-5 flex items-center justify-between gap-4">
+          <span className="text-[13.5px] text-text">Jetzt abgleichen</span>
+          <AbgleichKnopf />
+        </div>
 
         {coachZugang.art === 'da' ? null : (
           <p className="mt-4 border-t border-kontur pt-3 font-mono text-[11px] leading-relaxed text-text-leise">

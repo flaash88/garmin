@@ -41,6 +41,13 @@ export const verlaeufe = pgTable('verlaeufe', {
     .primaryKey()
     .references(() => aktivitaeten.id, { onDelete: 'cascade' }),
   daten: jsonb('daten').notNull(),
+  /**
+   * Womit der Verlauf geholt wurde. Wird die Art des Abrufs geändert — etwa
+   * weil eine Reihe fehlte —, steigt die Zahl, und alte Zwischenspeicher
+   * werden beim nächsten Öffnen einmal erneuert statt für immer falsch zu
+   * bleiben. Siehe lib/daten/verlauf.ts.
+   */
+  fassung: integer('fassung').notNull().default(1),
   geholtAm: timestamp('geholt_am', { withTimezone: true }).notNull().defaultNow(),
 })
 

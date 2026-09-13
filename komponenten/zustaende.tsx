@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { Route } from 'next'
+import { AbgleichKnopf } from './abgleich-knopf'
 
 /**
  * Die im Entwurf gestalteten Zustände. Wortlaut wie dort.
@@ -60,21 +61,22 @@ export function AbgleichFehler({ meldung }: { meldung?: string | null }) {
           {meldung}
         </p>
       ) : null}
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <Link
           href="/mehr"
           className="inline-flex min-h-11 items-center rounded-[2px] border border-kontur px-3 text-[13px] text-text"
         >
           Schlüssel prüfen
         </Link>
-        <form action="/api/abgleich" method="post">
-          <button
-            type="submit"
-            className="inline-flex min-h-11 cursor-pointer items-center rounded-[2px] bg-text-stark px-3 text-[13px] font-medium text-grund"
-          >
-            Erneut versuchen
-          </button>
-        </form>
+        {/*
+          Derselbe Knopf wie in der Kopfzeile. Ein Formular auf /api/abgleich
+          ginge jetzt ins Leere: die Route antwortet mit JSON statt einer
+          Umleitung, damit der Knopf das Ergebnis an Ort und Stelle zeigt.
+        */}
+        <span className="flex items-center gap-2 text-[13px] text-text">
+          Erneut versuchen
+          <AbgleichKnopf />
+        </span>
       </div>
     </div>
   )
