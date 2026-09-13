@@ -4,7 +4,7 @@
  *
  *     pnpm abgleich
  */
-import { abgleichLaufen } from '../lib/abgleich/lauf.ts'
+import { abgleichLaufen } from '@/lib/abgleich/lauf'
 
 const fortschritt = await abgleichLaufen()
 

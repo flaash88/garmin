@@ -8,6 +8,7 @@
 import {
   ganzzahlOderNull,
   istSatz,
+  kennungOderNull,
   tagOderNull,
   textOderNull,
   zahlOderNull,
@@ -31,7 +32,7 @@ export interface AktivitaetZeile {
 
 export function aktivitaetUmwandeln(roh: unknown): AktivitaetZeile | null {
   if (!istSatz(roh)) return null
-  const id = textOderNull(roh, 'id')
+  const id = kennungOderNull(roh, 'id')
   const beginn = zeitpunktOderNull(roh, 'start_date_local', 'start_date')
   if (!id || !beginn) return null
 
@@ -116,7 +117,7 @@ export interface PlanZeile {
 
 export function planUmwandeln(roh: unknown): PlanZeile | null {
   if (!istSatz(roh)) return null
-  const id = textOderNull(roh, 'id')
+  const id = kennungOderNull(roh, 'id')
   const tag = tagOderNull(roh, 'start_date_local', 'start_date', 'date')
   if (!id || !tag) return null
 
@@ -144,7 +145,7 @@ export interface AusruestungZeile {
 
 export function ausruestungUmwandeln(roh: unknown): AusruestungZeile | null {
   if (!istSatz(roh)) return null
-  const id = textOderNull(roh, 'id')
+  const id = kennungOderNull(roh, 'id')
   const name = textOderNull(roh, 'name')
   if (!id || !name) return null
 

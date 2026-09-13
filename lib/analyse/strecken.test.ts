@@ -41,6 +41,41 @@ describe('stuetzpunkte', () => {
     expect(p[7]?.breite).toBeCloseTo(s[99]?.breite ?? 0, 9)
   })
 
+  it('verteilt nach Streckenlaenge, nicht nach Index', () => {
+    // Der Ampel-Fall: dieselbe Runde, einmal mit 60 fast gleichen Punkten an
+    // einer Stelle in der Mitte. Nach Index gezogen rutschten alle
+    // Stuetzpunkte zur Ampel hin und die Runde erkennt sich nicht wieder.
+    const glatt = spur(120)
+    const halt = glatt[60] as Punkt
+    const mitAmpel = [
+      ...glatt.slice(0, 60),
+      ...Array.from({ length: 60 }, () => ({ ...halt })),
+      ...glatt.slice(60),
+    ]
+
+    const a = stuetzpunkte(glatt)
+    const b = stuetzpunkte(mitAmpel)
+    const groesster = Math.max(...a.map((p, i) => abstand(p, b[i] as Punkt)))
+    expect(groesster).toBeLessThan(50)
+  })
+
+  it('erkennt dieselbe Runde trotz einer Pause unterwegs', () => {
+    const glatt = spur(120)
+    const halt = glatt[60] as Punkt
+    const mitAmpel = [
+      ...glatt.slice(0, 60),
+      ...Array.from({ length: 60 }, () => ({ ...halt })),
+      ...glatt.slice(60),
+    ]
+    const e = vergleichen(signatur(glatt, 10_000), signatur(mitAmpel, 10_000))
+    expect(e?.gleich).toBe(true)
+  })
+
+  it('haelt eine Spur aus, die auf der Stelle steht', () => {
+    const stehend = Array.from({ length: 20 }, () => ({ ...START }))
+    expect(stuetzpunkte(stehend)).toHaveLength(8)
+  })
+
   it('haelt eine leere und eine einpunktige Spur aus', () => {
     expect(stuetzpunkte([])).toEqual([])
     expect(stuetzpunkte([START])).toHaveLength(8)

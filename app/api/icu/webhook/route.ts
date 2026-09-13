@@ -28,6 +28,19 @@ export async function POST(anfrage: NextRequest) {
 
   try {
     const fortschritt = await abgleichLaufen()
+
+    // Scheiterte jeder Schritt, ist der Abgleich nicht gelungen, auch wenn
+    // die Route selbst nicht geworfen hat. Ein 200 hier liesse einen
+    // abgelaufenen Schluessel wie eine geglueckte Zustellung aussehen —
+    // fuer intervals.icu und fuer jede Ueberwachung.
+    const schritte = 5
+    if (fortschritt.fehler.length >= schritte) {
+      return NextResponse.json(fortschritt, { status: 502 })
+    }
+    if (fortschritt.fehler.length > 0) {
+      // Teilweise durchgelaufen. 207 sagt genau das.
+      return NextResponse.json(fortschritt, { status: 207 })
+    }
     return NextResponse.json(fortschritt)
   } catch (fehler) {
     const text = fehler instanceof Error ? fehler.message : 'unbekannter Fehler'

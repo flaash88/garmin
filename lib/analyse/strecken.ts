@@ -30,21 +30,42 @@ export function abstand(a: Punkt, b: Punkt): number {
 export const STUETZPUNKTE = 8
 
 /**
- * Gleichmäßig verteilte Stützpunkte über den Streckenverlauf. Unabhängig
- * davon, wie dicht die Rohpunkte liegen.
+ * Gleichmäßig über die **zurückgelegte Strecke** verteilte Stützpunkte, nicht
+ * über den Index im Feld.
+ *
+ * Der Unterschied ist kein Feinschliff: Wer an einer Ampel stehen bleibt,
+ * sammelt dort Dutzende fast gleicher Punkte. Nach Index gezogen rutschen
+ * dadurch alle Stützpunkte zur Ampel hin, und dieselbe Runde erkennt sich
+ * selbst nicht wieder. Nach Streckenlänge gezogen fällt eine Pause nicht ins
+ * Gewicht.
  */
 export function stuetzpunkte(spur: readonly Punkt[], anzahl = STUETZPUNKTE): Punkt[] {
   if (spur.length === 0) return []
   if (spur.length === 1) return Array.from({ length: anzahl }, () => spur[0] as Punkt)
 
+  // Aufsummierte Strecke bis zu jedem Punkt.
+  const bis: number[] = [0]
+  for (let i = 1; i < spur.length; i += 1) {
+    bis.push((bis[i - 1] ?? 0) + abstand(spur[i - 1] as Punkt, spur[i] as Punkt))
+  }
+  const gesamt = bis[bis.length - 1] ?? 0
+
+  // Steht die Spur auf der Stelle, bleibt nur der Index.
+  if (gesamt === 0) return Array.from({ length: anzahl }, () => spur[0] as Punkt)
+
   const ergebnis: Punkt[] = []
+  let j = 1
   for (let i = 0; i < anzahl; i += 1) {
-    const stelle = (i / (anzahl - 1)) * (spur.length - 1)
-    const unten = Math.floor(stelle)
-    const oben = Math.min(unten + 1, spur.length - 1)
-    const rest = stelle - unten
-    const a = spur[unten] as Punkt
-    const b = spur[oben] as Punkt
+    const ziel = (i / (anzahl - 1)) * gesamt
+    while (j < bis.length - 1 && (bis[j] ?? 0) < ziel) j += 1
+
+    const vorher = bis[j - 1] ?? 0
+    const nachher = bis[j] ?? 0
+    const spanne = nachher - vorher
+    const rest = spanne === 0 ? 0 : (ziel - vorher) / spanne
+
+    const a = spur[j - 1] as Punkt
+    const b = spur[j] as Punkt
     ergebnis.push({
       breite: a.breite + (b.breite - a.breite) * rest,
       laenge: a.laenge + (b.laenge - a.laenge) * rest,

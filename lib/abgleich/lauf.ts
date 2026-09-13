@@ -190,14 +190,21 @@ export async function zonenAbgleichen(zugang: IcuZugang): Promise<number> {
 export async function befuellungFesthalten(quelle: string, saetze: readonly Rohsatz[]): Promise<void> {
   if (saetze.length === 0) return
   const zaehler = befuellungZaehlen(saetze)
-  await datenbank().delete(feldbefuellung).where(sql`${feldbefuellung.quelle} = ${quelle}`)
   const zeilen = [...zaehler].map(([feld, stand]) => ({
     quelle,
     feld,
     befuellt: stand.befuellt,
     gesamt: stand.gesamt,
   }))
-  if (zeilen.length > 0) await datenbank().insert(feldbefuellung).values(zeilen)
+  if (zeilen.length === 0) return
+
+  // Löschen und Einfügen in einer Transaktion. Sonst stünde die Tabelle nach
+  // einem Fehlschlag dazwischen leer da, und E0.8 liesse sich bis zum
+  // nächsten vollständigen Lauf nicht beantworten.
+  await datenbank().transaction(async (tx) => {
+    await tx.delete(feldbefuellung).where(sql`${feldbefuellung.quelle} = ${quelle}`)
+    await tx.insert(feldbefuellung).values(zeilen)
+  })
 }
 
 /** Ein vollständiger Durchlauf. Verläufe kommen bewusst nicht mit. */
@@ -205,28 +212,35 @@ export async function abgleichLaufen(vonTag?: string): Promise<Fortschritt> {
   const zugang = zugangAusUmgebung()
   const fortschritt = leererFortschritt()
 
-  const schritte: Array<[string, () => Promise<void>]> = [
-    ['Aktivitäten', async () => {
+  const schritte: Array<[string, string, () => Promise<void>]> = [
+    ['Aktivitäten', 'aktivitaeten', async () => {
       fortschritt.aktivitaeten = await aktivitaetenAbgleichen(zugang, vonTag)
     }],
-    ['Wellness', async () => {
+    ['Wellness', 'wellness', async () => {
       const e = await wellnessAbgleichen(zugang, vonTag)
       fortschritt.wellness = e.anzahl
       await befuellungFesthalten('wellness', e.roh)
     }],
-    ['Plan', async () => { fortschritt.plan = await planAbgleichen(zugang) }],
-    ['Ausrüstung', async () => { fortschritt.ausruestung = await ausruestungAbgleichen(zugang) }],
-    ['Zonen', async () => { fortschritt.zonen = await zonenAbgleichen(zugang) }],
+    ['Plan', 'plan', async () => { fortschritt.plan = await planAbgleichen(zugang) }],
+    ['Ausrüstung', 'ausruestung', async () => { fortschritt.ausruestung = await ausruestungAbgleichen(zugang) }],
+    ['Zonen', 'zonen', async () => { fortschritt.zonen = await zonenAbgleichen(zugang) }],
   ]
 
   // Ein gescheiterter Schritt hält die anderen nicht auf. Was geholt werden
   // konnte, liegt danach da; der Fehler steht im Ergebnis und in der Tabelle.
-  for (const [name, schritt] of schritte) {
+  for (const [name, quelle, schritt] of schritte) {
     try {
       await schritt()
     } catch (fehler) {
       const text = fehler instanceof Error ? fehler.message : 'unbekannter Fehler'
       fortschritt.fehler.push(`${name}: ${text}`)
+      // Der Fehler muss auch in der Tabelle landen, sonst sieht die
+      // Oberfläche später einen Abgleich, der nie durchlief.
+      try {
+        await standSchreiben(quelle, new Date(), text)
+      } catch {
+        // Steht die Datenbank still, ist der Fehler im Ergebnis genug.
+      }
     }
   }
 

@@ -50,8 +50,15 @@ function kopfzeilen(zugang: IcuZugang): Headers {
   return kopf
 }
 
-/** Wartezeiten für die Wiederholung: 1 s, 4 s, 9 s. Danach wird aufgegeben. */
+/**
+ * Drei Versuche, dazwischen 1 s und 4 s Pause. Nur für GET.
+ *
+ * Ein POST oder PUT wird **nicht** wiederholt: bricht die Verbindung nach dem
+ * Anlegen eines Plan-Eintrags ab, stünde die Einheit sonst zweimal im
+ * Kalender. Lieber ein gemeldeter Fehlschlag als ein stiller Doppeleintrag.
+ */
 const WIEDERHOLUNGEN = 3
+const PAUSEN_MS = [0, 1000, 4000] as const
 
 function istVoruebergehend(status: number): boolean {
   return status === 429 || status === 502 || status === 503 || status === 504
@@ -87,15 +94,18 @@ export async function icuHolen<T>(
   const kopf = kopfzeilen(zugang)
   if (optionen.koerper !== undefined) kopf.set('Content-Type', 'application/json')
 
+  const methode = optionen.methode ?? 'GET'
+  const versuche = methode === 'GET' ? WIEDERHOLUNGEN : 1
+
   let letzterFehler: IcuFehler | null = null
 
-  for (let versuch = 0; versuch < WIEDERHOLUNGEN; versuch += 1) {
-    if (versuch > 0) await schlafen(versuch * versuch * 1000)
+  for (let versuch = 0; versuch < versuche; versuch += 1) {
+    if (versuch > 0) await schlafen(PAUSEN_MS[versuch] ?? 4000)
 
     let antwort: Response
     try {
       antwort = await fetch(adresse, {
-        method: optionen.methode ?? 'GET',
+        method: methode,
         headers: kopf,
         ...(optionen.koerper === undefined
           ? {}

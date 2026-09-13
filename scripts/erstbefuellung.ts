@@ -7,7 +7,7 @@
  * Die Ausgabe nennt die tatsächlich geholten Zahlen. Die „1 240 Einheiten"
  * aus dem Entwurf sind ein Platzhalter und stehen hier nicht.
  */
-import { erstbefuellung } from '../lib/abgleich/lauf.ts'
+import { erstbefuellung } from '@/lib/abgleich/lauf'
 
 console.log('Erstbefüllung läuft. Zwölf Monate, ohne Verläufe.\n')
 

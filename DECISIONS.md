@@ -609,3 +609,58 @@ ankommen. Jeder Schritt läuft für sich; Fehler sammeln sich im Ergebnis und in
 der Spalte `zuletzt_fehler`. Die Fortschrittsanzeige nennt die tatsächlich
 geholten Zahlen — die „1 240 Einheiten" aus dem Entwurf sind ein Platzhalter
 und stehen nirgends im Code.
+
+### E3.11 — Neun Befunde aus `/code-review`, alle behoben
+
+Die umfangreichste Prüfung bisher. Zwei Befunde machten etwas unbrauchbar,
+das laut Auftrag funktionieren muss. Testzahl von 107 auf 123.
+
+**`pnpm abgleich` und `pnpm erstbefuellung` liefen überhaupt nicht.**
+`node --experimental-strip-types` löst die Pfade aus `tsconfig.json` nicht
+auf; jeder Aufruf endete mit `Cannot find package '@/lib'`. Nachgestellt und
+bestätigt. Die Skripte laufen jetzt über `tsx`, das die Pfade kennt. Danach
+scheitert `pnpm abgleich` nur noch am fehlenden `ICU_API_KEY` — das ist das
+richtige Verhalten.
+
+**`befuellungZaehlen` hätte E0.8 wirkungslos gemacht.** `gesamt` zählte nur
+die Sätze, in denen der Schlüssel überhaupt vorkam. Ein Feld, das in genau
+einem von 365 Tagen auftaucht, meldete damit 1 von 1 — also „immer befüllt".
+Kein Feld wäre je als dauerhaft leer erkannt worden, und die ganze
+Entscheidung aus E0.8 liefe ins Leere. `gesamt` ist jetzt die Zahl aller
+Sätze. Ein Test hält genau diesen Fall fest.
+
+**Der Klient wiederholte auch POST und PUT.** Bricht die Verbindung nach dem
+Anlegen eines Plan-Eintrags ab, stünde die Einheit zweimal im Kalender —
+und der Plan wird laut Auftrag geschrieben, nicht nur gelesen. Wiederholt
+wird jetzt nur GET. Ein Test prüft, dass ein POST nach einem 502 genau einen
+Aufruf macht.
+
+**Fehler landeten nie in `abgleich.zuletzt_fehler`.** `standSchreiben` lief
+nur im Erfolgsfall und übergab immer `null`; der Parameter war toter Code
+und der Kommentar daneben schlicht falsch. Jetzt wird im Fehlerfall
+geschrieben, mit eigenem Fang darum — steht die Datenbank still, genügt der
+Fehler im Ergebnis.
+
+**Numerische Kennungen ließen den ganzen Plan leer bleiben.**
+`textOderNull` nahm nur Zeichenketten, Kalendereinträge von intervals.icu
+tragen aber numerische Kennungen. `planAbgleichen` hätte 0 gemeldet **und
+Erfolg gebucht**. Neu ist `kennungOderNull`, das beides nimmt.
+
+**Stützpunkte lagen nach Index, nicht nach Streckenlänge** — entgegen dem
+eigenen Kommentar. Wer an einer Ampel steht, sammelt dort Dutzende fast
+gleicher Punkte; nach Index gezogen rutschen alle Stützpunkte dorthin und
+dieselbe Runde erkennt sich selbst nicht wieder. Jetzt wird die Strecke
+aufsummiert und gleichmäßig darüber verteilt. Zwei Tests bilden den
+Ampel-Fall nach: 120 Punkte, davon 60 auf derselben Stelle.
+
+**Der Webhook meldete 200, auch wenn alle fünf Schritte scheiterten.** Ein
+abgelaufener Schlüssel hätte für intervals.icu wie eine geglückte Zustellung
+ausgesehen. Jetzt: 502, wenn alles scheiterte, 207 bei teilweisem Erfolg,
+200 nur bei vollständigem.
+
+**`befuellungFesthalten` löschte und fügte ohne Transaktion ein.** Ein
+Fehlschlag dazwischen hätte die Tabelle leer hinterlassen. Jetzt in einer
+Transaktion.
+
+**Die Wartezeiten stimmten nicht mit dem Kommentar überein** — tatsächlich
+0, 1, 4 s statt der behaupteten 1, 4, 9 s. Beides angeglichen.
