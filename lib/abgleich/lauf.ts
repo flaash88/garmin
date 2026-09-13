@@ -23,6 +23,44 @@ import {
  * Oberfläche liest nur, was hier abgelegt wurde.
  */
 
+/** Zahl der Schritte eines vollständigen Laufs. */
+export const SCHRITTE = 5
+
+/**
+ * Fasst einen Lauf in Zeilen, die den Ausgang **zuerst** nennen.
+ *
+ * Vorher standen die Zahlen oben und die Fehler darunter. Ein Lauf, bei dem
+ * alles scheiterte, las sich damit wie ein erfolgreicher Lauf mit leerem
+ * Ergebnis — «0 Aktivitäten, 0 Wellness» —, und die Fehler wirkten wie eine
+ * Fußnote. Jetzt steht in der ersten Zeile, woran man ist.
+ */
+export function fortschrittZeilen(f: Fortschritt): string[] {
+  const schritte = SCHRITTE
+  const zeilen: string[] = []
+
+  if (f.fehler.length >= schritte) {
+    zeilen.push('ABGLEICH FEHLGESCHLAGEN — kein Schritt ist durchgelaufen.')
+  } else if (f.fehler.length > 0) {
+    zeilen.push(
+      `ABGLEICH UNVOLLSTÄNDIG — ${f.fehler.length} von ${schritte} Schritten gescheitert.`,
+    )
+  } else {
+    zeilen.push('Abgleich fertig, alle Schritte durchgelaufen.')
+  }
+
+  for (const fehler of f.fehler) zeilen.push(`  Fehler — ${fehler}`)
+
+  if (f.fehler.length > 0) zeilen.push('')
+  zeilen.push(f.fehler.length > 0 ? 'Geholt (unvollständig):' : 'Geholt:')
+  zeilen.push(`  Aktivitäten  ${f.aktivitaeten}`)
+  zeilen.push(`  Wellness     ${f.wellness}`)
+  zeilen.push(`  Plan         ${f.plan}`)
+  zeilen.push(`  Ausrüstung   ${f.ausruestung}`)
+  zeilen.push(`  Zonen        ${f.zonen}`)
+
+  return zeilen
+}
+
 export interface Fortschritt {
   /** Tatsächliche Zahlen, keine Platzhalter. */
   aktivitaeten: number
@@ -209,8 +247,23 @@ export async function befuellungFesthalten(quelle: string, saetze: readonly Rohs
 
 /** Ein vollständiger Durchlauf. Verläufe kommen bewusst nicht mit. */
 export async function abgleichLaufen(vonTag?: string): Promise<Fortschritt> {
-  const zugang = zugangAusUmgebung()
   const fortschritt = leererFortschritt()
+
+  /*
+   * Fehlt der Zugang, ist das ein Fehlschlag des ganzen Laufs — kein Grund
+   * für einen Stapelauszug. Vorher warf die Prüfung aus der Funktion heraus,
+   * und der Aufrufer bekam eine nackte Ausnahme statt eines Berichts.
+   */
+  let zugang
+  try {
+    zugang = zugangAusUmgebung()
+  } catch (fehler) {
+    const text = fehler instanceof Error ? fehler.message : 'unbekannter Fehler'
+    for (const name of ['Aktivitäten', 'Wellness', 'Plan', 'Ausrüstung', 'Zonen']) {
+      fortschritt.fehler.push(`${name}: ${text}`)
+    }
+    return fortschritt
+  }
 
   const schritte: Array<[string, string, () => Promise<void>]> = [
     ['Aktivitäten', 'aktivitaeten', async () => {

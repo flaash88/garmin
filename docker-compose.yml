@@ -1,8 +1,9 @@
 # =============================================================================
 # Takt — Verbund für den Betrieb.
 #
-#   takt          Webdienst
 #   datenbank     PostgreSQL
+#   wanderung     spielt die Wanderungen ein und endet — läuft vor allem anderen
+#   takt          Webdienst
 #   zeitplan      stündlicher Abgleich, tägliche Prüfung des Wochenbriefings
 #   sicherung     pg_dump täglich, sieben Stände
 #   tunnel        cloudflared
@@ -46,6 +47,25 @@ services:
     expose:
       - '5432'
 
+  # Einmaliger Lauf. Spielt die Wanderungen ein und endet.
+  #
+  # Vor der ersten Inbetriebnahme lief das nicht von selbst: das Schema blieb
+  # leer, und jede Abfrage scheiterte. Ein eigener Dienst statt eines Schritts
+  # im Webdienst, weil die Wanderung genau einmal laufen soll — nicht in jedem
+  # Prozess, der hochfährt.
+  wanderung:
+    build:
+      context: .
+      target: werkzeuge
+    depends_on:
+      datenbank:
+        condition: service_healthy
+    environment:
+      TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
+      TZ: ${TZ:-Europe/Vienna}
+    command: ['node_modules/.bin/drizzle-kit', 'migrate']
+    restart: 'no'
+
   takt:
     build:
       context: .
@@ -54,6 +74,8 @@ services:
     depends_on:
       datenbank:
         condition: service_healthy
+      wanderung:
+        condition: service_completed_successfully
     environment:
       TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
       # Nur setzen, wenn ein Passwort hinterlegt ist. Sonst stünde hier eine
@@ -68,6 +90,7 @@ services:
       ICU_API_KEY: ${ICU_API_KEY:-}
       ICU_ATHLET_ID: ${ICU_ATHLET_ID:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      TAKT_CLAUDE_BINAERDATEI: ${TAKT_CLAUDE_BINAERDATEI:-}
       TZ: ${TZ:-Europe/Vienna}
     # Kein Port nach außen: der Tunnel spricht den Dienst im Verbund an.
     # Zum Ausprobieren ohne Tunnel die nächsten zwei Zeilen einkommentieren.
@@ -84,12 +107,15 @@ services:
     depends_on:
       datenbank:
         condition: service_healthy
+      wanderung:
+        condition: service_completed_successfully
     environment:
       TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
       TAKT_SQL_ROLLE_URL: ${TAKT_COACH_PASSWORT:+postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}}
       ICU_API_KEY: ${ICU_API_KEY:-}
       ICU_ATHLET_ID: ${ICU_ATHLET_ID:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      TAKT_CLAUDE_BINAERDATEI: ${TAKT_CLAUDE_BINAERDATEI:-}
       TZ: ${TZ:-Europe/Vienna}
 
   sicherung:

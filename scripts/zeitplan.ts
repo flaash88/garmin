@@ -10,9 +10,10 @@
  *
  * Bewusst kein cron im Behälter: ein Prozess, ein Protokoll, ein Neustart.
  */
-import { abgleichLaufen } from '@/lib/abgleich/lauf'
+import { abgleichLaufen, fortschrittZeilen } from '@/lib/abgleich/lauf'
 import { briefingBeiBedarf } from '@/lib/coach/analysen'
 import { istZugangsfehler, startmeldung, zugangPruefen } from '@/lib/coach/zugang'
+import { binaerdateiStartmeldung, binaerdateiSuchen } from '@/lib/coach/binaerdatei'
 
 const STUNDE_MS = 60 * 60 * 1000
 const ABGLEICH_ALLE_MS = STUNDE_MS
@@ -29,11 +30,8 @@ function melden(text: string): void {
 async function abgleichen(): Promise<void> {
   try {
     const f = await abgleichLaufen()
-    melden(
-      `Abgleich: ${f.aktivitaeten} Aktivitäten, ${f.wellness} Wellness, ` +
-        `${f.plan} Plan, ${f.ausruestung} Ausrüstung, ${f.zonen} Zonen`,
-    )
-    for (const fehler of f.fehler) melden(`  Fehler — ${fehler}`)
+    // Ausgang zuerst, Zahlen danach.
+    for (const zeile of fortschrittZeilen(f)) if (zeile) melden(zeile)
   } catch (fehler) {
     melden(
       `Abgleich fehlgeschlagen: ${fehler instanceof Error ? fehler.message : 'unbekannt'}`,
@@ -82,6 +80,11 @@ melden('Zeitplan gestartet. Abgleich stündlich, Briefing täglich geprüft.')
 const startText = startmeldung()
 if (startText) for (const zeile of startText.split('\n')) melden(zeile)
 else melden('Coach-Zugang liegt vor.')
+
+const binaer = binaerdateiSuchen()
+const binaerText = binaerdateiStartmeldung(binaer)
+if (binaerText) for (const zeile of binaerText.split('\n')) melden(zeile)
+else melden(`Agent-Binärdatei gefunden (${binaer?.quelle}).`)
 
 // Einmal gleich zu Beginn, damit ein Neustart nicht eine Stunde kostet.
 void abgleichen()

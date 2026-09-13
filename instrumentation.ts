@@ -18,6 +18,22 @@ export async function register(): Promise<void> {
     console.log('[takt] Coach-Zugang liegt vor.')
   }
 
+  /*
+   * Die native Binärdatei des Agent SDK. Sie fehlte nach dem ersten Bau des
+   * Abbilds, und der Fehler zeigte sich erst beim ersten Chat — deshalb wird
+   * sie jetzt beim Hochfahren gesucht.
+   */
+  const { binaerdateiStartmeldung, binaerdateiSuchen } = await import(
+    '@/lib/coach/binaerdatei'
+  )
+  const binaer = binaerdateiSuchen()
+  const binaerMeldung = binaerdateiStartmeldung(binaer)
+  if (binaerMeldung) {
+    console.warn(`[takt] ${binaerMeldung}`)
+  } else {
+    console.log(`[takt] Agent-Binärdatei gefunden (${binaer?.quelle}).`)
+  }
+
   // Die übrigen Pflichtwerte gleich mit. Fehlt einer, steht es beim Start da
   // und nicht in einem Fehler mitten im Betrieb.
   const pflicht = ['TAKT_DATENBANK_URL', 'TAKT_SITZUNG_SECRET', 'TAKT_PASSWORT_HASH']

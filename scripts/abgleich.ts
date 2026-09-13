@@ -3,20 +3,16 @@
  * ausbleibt — stündlich aus dem Zeitplan aufgerufen.
  *
  *     pnpm abgleich
+ *
+ * Der Ausgang steht in der ersten Zeile, nicht als Fußnote unter den Zahlen.
  */
-import { abgleichLaufen } from '@/lib/abgleich/lauf'
+import { abgleichLaufen, fortschrittZeilen } from '@/lib/abgleich/lauf'
 
 const fortschritt = await abgleichLaufen()
 
-console.log('Abgleich fertig:')
-console.log(`  Aktivitäten  ${fortschritt.aktivitaeten}`)
-console.log(`  Wellness     ${fortschritt.wellness}`)
-console.log(`  Plan         ${fortschritt.plan}`)
-console.log(`  Ausrüstung   ${fortschritt.ausruestung}`)
-console.log(`  Zonen        ${fortschritt.zonen}`)
-
-if (fortschritt.fehler.length > 0) {
-  console.error('\nFehler:')
-  for (const f of fortschritt.fehler) console.error(`  ${f}`)
-  process.exit(1)
+for (const zeile of fortschrittZeilen(fortschritt)) {
+  if (fortschritt.fehler.length > 0) console.error(zeile)
+  else console.log(zeile)
 }
+
+if (fortschritt.fehler.length > 0) process.exit(1)

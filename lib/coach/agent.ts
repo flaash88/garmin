@@ -6,6 +6,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import { athletenprofil } from './profil'
 import { istZugangsfehler, startmeldung, TOKEN_VARIABLE, zugangPruefen } from './zugang'
+import { binaerdateiStartmeldung, binaerdateiSuchen } from './binaerdatei'
 import {
   FORMEN,
   werkzeugAktivitaeten,
@@ -265,6 +266,17 @@ export async function* coachFragen(
     return
   }
 
+  const binaer = binaerdateiSuchen()
+  if (!binaer) {
+    yield {
+      art: 'fehler',
+      text:
+        'Die native Binärdatei des Agent SDK fehlt. Der Coach kann nicht ' +
+        'starten. Einzelheiten stehen im Serverprotokoll.',
+    }
+    return
+  }
+
   const meldungen: WerkzeugMeldung[] = []
   const server = mcpServerBauen((m) => meldungen.push(m))
   const profil = await athletenprofil()
@@ -286,6 +298,11 @@ export async function* coachFragen(
       prompt: eingabe,
       options: {
         model: MODELL,
+        /*
+         * Pfad ausdrücklich übergeben. Die eigene Auflösung des SDK trägt im
+         * eigenständigen Bündel von Next nicht — siehe lib/coach/binaerdatei.ts.
+         */
+        pathToClaudeCodeExecutable: binaer.pfad,
         systemPrompt: profil,
         mcpServers: { [SERVER_NAME]: server },
         /*
@@ -412,4 +429,9 @@ export function zugangBeimStartPruefen(): void {
   const meldung = startmeldung()
   if (meldung) console.warn(`[takt] ${meldung}`)
   else console.log('[takt] Coach-Zugang liegt vor.')
+
+  const binaer = binaerdateiSuchen()
+  const binaerMeldung = binaerdateiStartmeldung(binaer)
+  if (binaerMeldung) console.warn(`[takt] ${binaerMeldung}`)
+  else console.log(`[takt] Agent-Binärdatei gefunden (${binaer?.quelle}).`)
 }

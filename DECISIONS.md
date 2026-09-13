@@ -1336,3 +1336,111 @@ und der Ablauf ist ein Aufruf von Minuten. Sobald der Token in `.env` steht:
 
 und eine Frage an den Coach, die auf die Aktivität mit der Kennung
 `wz-probe` führt.
+
+---
+
+## Phase 8 — Befunde der ersten Inbetriebnahme
+
+### E8.1 — Die native Binärdatei fehlte im Bündel
+
+**Der Fehler, den die Inbetriebnahme zeigte:**
+
+    Native CLI binary for linux-x64 not found. Reinstall
+    @anthropic-ai/claude-agent-sdk without --omit=optional.
+
+Ursache, Schritt für Schritt nachvollzogen — nicht geraten:
+
+1. Das SDK liefert die Binärdatei als **optionale** Abhängigkeit je Plattform
+   (`@anthropic-ai/claude-agent-sdk-linux-x64` und sieben Geschwister) und
+   sucht sie zur Laufzeit über die gewöhnliche Modulauflösung.
+2. Im Projekt liegt neben `claude-agent-sdk` ein Symlink
+   `claude-agent-sdk-linux-x64` — darüber löst sie auf.
+3. `.next/standalone` enthielt die Binärdatei **gar nicht**:
+   `find .next/standalone -name claude -type f` fand nichts. Die
+   Ablaufverfolgung von Next sieht nur statische Verweise.
+4. Mit `outputFileTracingIncludes` kamen die **Dateien** mit — der Fehler
+   blieb. Denn im Bündel steht neben `claude-agent-sdk` nur
+   `claude-agent-sdk`; der Symlink daneben wurde nicht kopiert, und ohne ihn
+   greift die Auflösung nicht.
+
+Behoben in drei Schichten, weil jede allein brechen kann:
+
+- **`next.config.ts`** nimmt die Plattformpakete ausdrücklich ins Bündel. Das
+  Muster `@anthropic-ai+claude-agent-sdk-*` greift, was installiert ist — in
+  einem Alpine-Abbild also die musl-Fassung.
+- **`lib/coach/binaerdatei.ts`** sucht den Pfad selbst und übergibt ihn als
+  `pathToClaudeCodeExecutable`. Drei Wege in dieser Reihenfolge: die Variable
+  `TAKT_CLAUDE_BINAERDATEI`, die gewöhnliche Auflösung, und zuletzt ein Blick
+  in den Paketspeicher von pnpm — der Fall, der im Bündel trägt. Auf musl wird
+  die musl-Fassung zuerst probiert.
+- **Der Bau des Abbilds bricht ab**, wenn die Binärdatei nicht im Bündel liegt
+  oder kein Plattformpaket installiert ist. Vorher lief er durch und lieferte
+  ein Abbild, dessen Coach nicht startet.
+
+Am eigenständigen Bündel nachgewiesen: vorher `Native CLI binary … not
+found`, nachher `[takt] Agent-Binärdatei gefunden (paketspeicher)` und ein
+Coach, der die Gegenseite erreicht.
+
+Das Bündel wächst dadurch von 50 MB auf 263 MB. Die Binärdatei allein wiegt
+214 MB; ohne sie gibt es keinen Coach.
+
+### E8.2 — Startprüfung auf die Binärdatei
+
+**Auf Anweisung.** Beim Hochfahren wird sie gesucht — in
+`instrumentation.ts` für den Webdienst und in `scripts/zeitplan.ts` für den
+Zeitplan. Fehlt sie, steht im Protokoll, welche Pakete gesucht wurden, dass
+`--omit=optional` die übliche Ursache ist, und dass sich der Pfad notfalls in
+`TAKT_CLAUDE_BINAERDATEI` setzen lässt. Dazu die Zusicherung, dass alles
+außer dem Coach weiterläuft.
+
+Der Chat meldet in diesem Fall nicht mehr den englischen Text des SDK, sondern
+einen deutschen Satz und verweist auf das Protokoll.
+
+### E8.3 — Die Wanderungen liefen beim ersten Hochfahren nicht
+
+**Befund der Inbetriebnahme.** Das Schema blieb leer, und jede Abfrage
+scheiterte. Es gab schlicht keinen Schritt, der sie eingespielt hätte — die
+Anleitung nannte einen Aufruf von Hand, und den übersieht man.
+
+Neu ist der Dienst `wanderung`: ein einmaliger Lauf, der die Wanderungen
+einspielt und endet. `takt` und `zeitplan` warten über
+`service_completed_successfully` darauf.
+
+Ein eigener Dienst statt eines Schritts im Webdienst, weil die Wanderung genau
+einmal laufen soll — nicht in jedem Prozess, der hochfährt. Bei einem einzigen
+Webdienst wäre der Unterschied klein; bei zweien liefen sie gegeneinander.
+
+### E8.4 — pnpm fehlte im Werkzeugabbild
+
+**Befund der Inbetriebnahme.** `package.json` nennt `pnpm db:migrate`,
+`pnpm abgleich`, `pnpm briefing` — im gebauten Abbild ließ sich keiner davon
+aufrufen, nur der Weg über `node_modules/.bin`.
+
+Gewählt: **pnpm mit ins Abbild** (`corepack prepare pnpm@10.33.0`), nicht die
+Dokumentation anpassen. Die Befehle stehen in `package.json`, sind in der
+Entwicklung der gewohnte Weg, und ein Abbild, in dem der gewohnte Weg nicht
+trägt, ist eine Stolperfalle. Der Weg über `node_modules/.bin` geht weiterhin
+auch; der Dienst `wanderung` nutzt ihn, weil er ohne Shell auskommt.
+
+### E8.5 — Der Abgleich las sich wie ein Erfolg mit leerem Ergebnis
+
+**Befund der Inbetriebnahme.** Die Ausgabe begann mit „0 Aktivitäten,
+0 Wellness" und listete die Fehler darunter. Wer flüchtig hinsah, las einen
+sauberen Lauf ohne neue Daten.
+
+`fortschrittZeilen()` stellt den Ausgang jetzt in die **erste Zeile**:
+
+    ABGLEICH FEHLGESCHLAGEN — kein Schritt ist durchgelaufen.
+    ABGLEICH UNVOLLSTÄNDIG — 2 von 5 Schritten gescheitert.
+    Abgleich fertig, alle Schritte durchgelaufen.
+
+Danach die Fehler, dann die Zahlen — mit der Überschrift „Geholt
+(unvollständig):", wenn etwas scheiterte. Die Skripte schreiben im
+Fehlerfall nach stderr und enden mit Code 1. Sechs Tests halten das fest,
+darunter einer, der ausdrücklich verlangt, dass die erste Zeile **nicht** mit
+einer Zahl beginnt.
+
+**Dabei mitgefunden:** ein fehlendes `ICU_API_KEY` warf aus `abgleichLaufen`
+heraus, und der Aufrufer bekam einen nackten Stapelauszug statt eines
+Berichts. Jetzt wird der Zugang innerhalb der Funktion geprüft und als
+Fehlschlag aller fünf Schritte gemeldet.

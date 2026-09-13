@@ -28,6 +28,26 @@ COPY . .
 # Zugriff, und alles hinter der Anmeldung wird je Anfrage erzeugt.
 RUN pnpm build
 
+# Die native Binärdatei des Agent SDK muss im Bündel liegen.
+#
+# Sie kommt als optionale Abhängigkeit je Plattform und wurde beim ersten Bau
+# stillschweigend ausgelassen; der Build lief durch, und erst der erste Chat
+# scheiterte mit «Native CLI binary for linux-x64 not found». Diese Prüfung
+# lässt den Bau scheitern statt ein kaputtes Abbild auszuliefern.
+RUN set -eu; \
+    if [ -z "$(find .next/standalone -name claude -type f -print -quit)" ]; then \
+      echo "FEHLER: Die native Binärdatei des Agent SDK fehlt im Bündel." >&2; \
+      echo "  Erwartet unter .next/standalone/node_modules/.pnpm/@anthropic-ai+claude-agent-sdk-*/" >&2; \
+      echo "  Ursache meist: Installation mit --omit=optional oder --no-optional," >&2; \
+      echo "  oder outputFileTracingIncludes in next.config.ts greift nicht mehr." >&2; \
+      exit 1; \
+    fi; \
+    if ! find node_modules/.pnpm -maxdepth 1 -name "@anthropic-ai+claude-agent-sdk-*" -print -quit | grep -q .; then \
+      echo "FEHLER: Kein Plattformpaket des Agent SDK installiert." >&2; \
+      exit 1; \
+    fi; \
+    echo "Agent-Binärdatei im Bündel: ok"
+
 
 # --- Webdienst ---------------------------------------------------------------
 FROM node:22-alpine AS laufen
@@ -62,6 +82,12 @@ WORKDIR /takt
 ENV NODE_ENV=production
 
 RUN apk add --no-cache tini postgresql16-client
+
+# pnpm mit ins Abbild. Ohne das laufen die Befehle aus package.json —
+# `pnpm db:migrate`, `pnpm abgleich`, `pnpm briefing` — im gebauten Abbild
+# nicht, und es bliebe nur der Aufruf über node_modules/.bin. Die Dokumentation
+# nennt beide Wege; beide sollen auch tragen.
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY --from=bauen --chown=node:node /takt/node_modules ./node_modules
 COPY --chown=node:node package.json tsconfig.json drizzle.config.ts ./

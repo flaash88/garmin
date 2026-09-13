@@ -7,7 +7,7 @@
  * Die Ausgabe nennt die tatsächlich geholten Zahlen. Die „1 240 Einheiten"
  * aus dem Entwurf sind ein Platzhalter und stehen hier nicht.
  */
-import { erstbefuellung } from '@/lib/abgleich/lauf'
+import { erstbefuellung, fortschrittZeilen } from '@/lib/abgleich/lauf'
 
 console.log('Erstbefüllung läuft. Zwölf Monate, ohne Verläufe.\n')
 
@@ -15,17 +15,18 @@ const begonnen = Date.now()
 const fortschritt = await erstbefuellung()
 const dauer = Math.round((Date.now() - begonnen) / 1000)
 
-console.log('Geholt:')
-console.log(`  Aktivitäten  ${fortschritt.aktivitaeten}`)
-console.log(`  Wellness     ${fortschritt.wellness}`)
-console.log(`  Plan         ${fortschritt.plan}`)
-console.log(`  Ausrüstung   ${fortschritt.ausruestung}`)
-console.log(`  Zonen        ${fortschritt.zonen}`)
+const gescheitert = fortschritt.fehler.length > 0
+for (const zeile of fortschrittZeilen(fortschritt)) {
+  if (gescheitert) console.error(zeile)
+  else console.log(zeile)
+}
 console.log(`\nDauer: ${dauer} s`)
 
-if (fortschritt.fehler.length > 0) {
-  console.error('\nFehler:')
-  for (const f of fortschritt.fehler) console.error(`  ${f}`)
+if (gescheitert) {
+  console.error(
+    '\nDie Erstbefüllung ist nicht vollständig durchgelaufen. Nach dem Beheben\n' +
+      'einfach erneut aufrufen — der Abgleich holt nach, was fehlt.',
+  )
   process.exit(1)
 }
 

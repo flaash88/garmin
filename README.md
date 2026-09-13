@@ -81,6 +81,24 @@ sich ohne Weiteres weitergeben — was darin steckt, ist dauerhaft darin.
 führt beide Variablen in derselben Gruppe, und sind beide gesetzt, hängt an
 der Reihenfolge, welches Konto die Nutzung trägt.
 
+### Native Binärdatei des Agent SDK
+
+Das SDK bringt eine native Binärdatei mit, je Plattform als **optionale**
+Abhängigkeit. Wird mit `--omit=optional` oder `--no-optional` installiert,
+fehlt sie, der Bau läuft trotzdem durch, und erst der erste Chat scheitert mit
+`Native CLI binary for linux-x64 not found`.
+
+Dagegen stehen drei Dinge: `next.config.ts` nimmt sie ausdrücklich ins Bündel,
+der Bau des Abbilds bricht ab, wenn sie fehlt, und beim Hochfahren wird sie
+gesucht und gemeldet:
+
+```
+docker compose logs takt | grep Binärdatei
+```
+
+Greift die Suche einmal daneben, lässt sich der Pfad in
+`TAKT_CLAUDE_BINAERDATEI` setzen. Normalerweise bleibt die Variable leer.
+
 **Läuft der Token ab**, sagt Takt das an drei Stellen deutlich: der Coach
 zeigt einen eigenen Zustand statt eines allgemeinen Fehlers, „Mehr" meldet
 den Stand des Tokens, und der Zeitplan schreibt es ins Protokoll und versucht
@@ -98,8 +116,9 @@ Fünf Dienste laufen danach:
 
 | Dienst | Aufgabe |
 |---|---|
-| `takt` | Webdienst |
 | `datenbank` | PostgreSQL 16 |
+| `wanderung` | spielt die Wanderungen ein und endet — läuft vor allem anderen |
+| `takt` | Webdienst |
 | `zeitplan` | Abgleich stündlich, Wochenbriefing täglich geprüft |
 | `sicherung` | `pg_dump` täglich, sieben Stände |
 | `tunnel` | cloudflared |
@@ -109,11 +128,17 @@ Takt allein über den Tunnel.
 
 ### 3. Datenbank vorbereiten
 
-Erst die Tabellen, dann die Rolle für den Coach:
+**Die Wanderungen laufen von selbst.** Der Dienst `wanderung` spielt sie beim
+Hochfahren ein und endet; `takt` und `zeitplan` starten erst, wenn er sauber
+durch ist. Von Hand nachholen lässt es sich so:
 
 ```
-docker compose run --rm zeitplan node_modules/.bin/drizzle-kit migrate
+docker compose run --rm wanderung
+```
 
+Die Rolle für den Coach wird einmalig angelegt:
+
+```
 docker compose run --rm \
   -e TAKT_COACH_PASSWORT="$(grep '^TAKT_COACH_PASSWORT=' .env | cut -d= -f2-)" \
   zeitplan sh datenbank/einrichten.sh
@@ -130,10 +155,18 @@ später beim ersten Öffnen einer Aktivität, weil sie groß sind und selten
 gebraucht werden.
 
 ```
-docker compose run --rm zeitplan node_modules/.bin/tsx scripts/erstbefuellung.ts
+docker compose run --rm zeitplan pnpm erstbefuellung
 ```
 
-Die Ausgabe nennt die tatsächlich geholten Zahlen.
+Die Ausgabe nennt die tatsächlich geholten Zahlen — und in der **ersten
+Zeile** den Ausgang. Scheitert etwas, steht dort `ABGLEICH UNVOLLSTÄNDIG`
+oder `ABGLEICH FEHLGESCHLAGEN`, nicht eine Reihe Nullen, die wie ein leeres
+Ergebnis aussieht. Nach dem Beheben einfach erneut aufrufen; der Abgleich
+holt nach, was fehlt.
+
+Im Werkzeugabbild liegt `pnpm`, die Befehle aus `package.json` lassen sich
+also direkt aufrufen — `pnpm abgleich`, `pnpm briefing`, `pnpm db:migrate`.
+Der Weg über `node_modules/.bin/…` geht weiterhin auch.
 
 Danach steht in der Tabelle `feldbefuellung`, welche Wellness-Felder
 intervals.icu überhaupt befüllt. Felder, die über den gesamten Bestand leer
