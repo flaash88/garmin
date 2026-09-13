@@ -1890,3 +1890,166 @@ gar nicht aufgetaucht. Die Sätze kommen jetzt bei jedem Aufruf frisch vom
 Server, und jede Änderung stößt ein `router.refresh()` an. Eine zweite
 Buchführung in der Oberfläche wäre beim Zustand einer Einheit die falsche
 Stelle für einen Irrtum.
+
+## Phase 12 — Ein leeres Ergebnis ist kein Erfolg
+
+### E12.1 — Zonen: gelesen wurde `type`, geliefert wird `types`
+
+**Befund des Athleten.** Der Schritt holt Daten, speichert nichts, meldet
+«Zonen 0» und «alle Schritte durchgelaufen». Die Tabelle blieb leer.
+
+Die Ursache stand in einer Zeile:
+
+```ts
+const sportart = typeof satz['type'] === 'string' ? satz['type'] : null
+if (!sportart) continue
+```
+
+`GET /athlete/{id}/sport-settings` liefert ein Array mit einem Satz je
+Sportartgruppe, und die Sportarten stehen als **Array** unter `types` —
+`['Run', 'VirtualRun', 'TrailRun']`. Ein Feld `type` gibt es dort nicht. Also
+war `sportart` bei jedem Satz `null`, jeder Satz fiel durch das `continue`,
+und der Schritt zählte null. Die Vermutung des Athleten war richtig, nur
+einen Buchstaben daneben.
+
+Die Umwandlung liegt jetzt in `zonenUmwandeln` neben den anderen — sie stand
+als einzige mitten im Abgleichlauf und war deshalb nie für sich prüfbar. Sie
+liest `types` und fällt auf ein einzelnes `type` zurück, falls ein Stand das
+so führt.
+
+### E12.2 — Eine Zeile je Sportart, nicht je Gruppe
+
+*«Meine Rad- und Laufwerte sind unterschiedlich; Takt muss die Laufwerte
+verwenden, wenn es Läufe auswertet.»*
+
+Ein gelieferter Satz gilt für mehrere Sportarten. Gespeichert wird er
+deshalb **aufgelöst**: aus `['Run', 'VirtualRun', 'TrailRun']` werden drei
+Zeilen mit demselben Inhalt. Wer einen Lauf auswertet, sucht unter `Run` und
+muss nicht wissen, wie intervals.icu gruppiert. Die Gruppe steht zusätzlich
+an jeder Zeile, damit sichtbar bleibt, was zusammengehört.
+
+Verwendet wird das an zwei Stellen:
+
+* **Die Aktivitätsseite** zeigt die Herzfrequenzzonen einer Einheit gegen die
+  Grenzen **ihrer** Sportart. Dieselbe Pulsreihe ergibt als Lauf und als
+  Radfahrt verschiedene Verteilungen — Puls 170 ist im Lauf Zone 4, auf dem
+  Rad Zone 2. Gegen den laufenden Server geprüft: dieselbe Einheit einmal als
+  `Run` (Schwellenpuls 165, Maximalpuls 196), einmal als `Ride` (200/220).
+* **Das Athletenprofil** des Coach nennt die Werte je Gruppe, Laufen zuerst,
+  mit dem ausdrücklichen Satz, die einen nicht für die anderen zu nehmen.
+  Aufgelöste Einzelzeilen wären hier falsch: aus vier gelieferten Sätzen
+  würden zwölf Zeilen, die dreimal dasselbe sagen.
+
+`zonenanteile()` rechnete fest mit fünf Zonen und wurde nirgends aufgerufen.
+intervals.icu führt sieben Obergrenzen. Die Zahl der Zonen ist jetzt ein
+Parameter mit der bisherigen Vorgabe fünf — so bleibt die Funktion eine
+statt zwei.
+
+**Die Schwellenpace wird umgerechnet.** `threshold_pace` ist eine
+Geschwindigkeit in Metern je Sekunde; die alte Zeile schrieb sie unverändert
+in ein Feld namens `schwellen_pace_sekunden_je_km`. 3,4 m/s wären damit als
+«0:03/km» erschienen. Umgerechnet sind es 4:54/km. Der gelieferte Wert steht
+zusätzlich unverändert daneben, damit die Umrechnung nachprüfbar bleibt und
+nicht die einzige Fassung ist. Werte außerhalb von 0,5 bis 15 m/s werden
+**nicht** umgerechnet — sie können keine Geschwindigkeit sein.
+
+### E12.3 — Ein Schritt ohne Ergebnis meldet sich nicht mehr als Erfolg
+
+*«Wichtiger als der Fehler selbst: dass er sich als Erfolg meldet. Das ist
+jetzt das dritte Mal — Ortspunkte, Wellness-Felder, Zonen.»*
+
+Das stimmt, und die drei Befunde teilen sich eine Form: die Antwort kam an,
+die Auswertung verstand sie nicht, und die Null daneben las sich wie «nichts
+Neues da» statt wie «nichts verstanden».
+
+Jeder Abgleichschritt gibt jetzt **zwei** Zahlen zurück statt einer:
+
+```ts
+interface Schrittergebnis {
+  geholt: number       // Sätze in der Antwort
+  geschrieben: number  // Zeilen in der Datenbank
+  roh: unknown[]       // für den Befund
+}
+```
+
+Ist `geholt > 0` und `geschrieben === 0`, entsteht eine **Warnung mit Grund**
+— nicht ein Fehler, denn geworfen hat nichts, und nicht ein Erfolg, denn
+angekommen ist nichts. Der Grund stellt gegenüber, was gebraucht wird und was
+da ist:
+
+> Zonen: 4 Sätze geholt, nichts gespeichert. Erwartet wird mindestens eines
+> der Felder types, type — keines davon ist da. Der erste Satz führt: id,
+> athlete_id, sport, lthr, max_hr, hr_zones, hr_zone_names, threshold_pace,
+> pace_zones.
+
+Genau diese Gegenüberstellung hätte jeden der drei Befunde sofort gezeigt.
+Gebraucht wird **eines** der erwarteten Felder, nicht alle: ist eines da und
+kam trotzdem nichts heraus, sagt der Befund das ebenso — dann liegt es an
+den Werten, nicht an den Namen, und ein fehlendes Zweitfeld wird nicht
+beklagt, auf das es nie ankam.
+
+Durchgehend heißt durchgehend, an allen fünf Stellen, an denen ein Lauf
+sichtbar wird:
+
+| Stelle | vorher | jetzt |
+| --- | --- | --- |
+| Bericht, erste Zeile | «alle Schritte durchgelaufen» | «ABGLEICH OHNE ERGEBNIS — 1 von 5 Schritten …» |
+| Knopf in der Kopfzeile | grün, «Abgleich fertig» | gelb, «Abgleich ohne Ergebnis», Grund darunter |
+| `pnpm abgleich` | Rückgabewert 0 | Rückgabewert 2, Ausgabe auf stderr |
+| Webhook | 200 | 207 |
+| Tabelle `abgleich` | `zuletzt_fehler` leer | der Grund steht drin |
+
+Der Rückgabewert des Skripts ist die Stelle, an der es zählt: ein Zeitplan,
+der nur auf 0 sieht, hätte alle drei Male nichts bemerkt.
+
+Nicht gewarnt wird, wenn die Antwort selbst leer war — nichts geholt, nichts
+geschrieben ist kein Befund, sondern Ruhe. Beide Fälle sind geprüft.
+
+### E12.4 — Geprüft wurde gegen die echte Antwortform
+
+Die Reihe in `lib/abgleich/umwandeln.test.ts` arbeitet mit der Antwort, wie
+sie im Betrieb ankommt: vier Sätze, `types` als Array, sieben Obergrenzen,
+Rad- und Laufwerte auseinander. Dazu in `lib/abgleich/lauf.test.ts` zwei
+Läufe gegen eine echte Datenbank — einer, der aus zwei Sätzen fünf Zeilen
+macht und dabei Lauf- und Radwerte auseinanderhält, und einer, der die
+Warnung auslöst und prüft, dass sie im Bericht **und** in der Tabelle steht.
+
+Für die Prüfung gegen die echte Schnittstelle liegt `pnpm zonen-probe` im
+Repo. Es holt `/athlete/{id}/sport-settings`, gibt die Antwort **ungekürzt**
+aus — eine Zusammenfassung hätte den Befund gerade verdeckt — und stellt
+daneben, welche Zeilen daraus würden. Es schreibt nichts.
+
+### E12.5 — Befunde der Durchsicht
+
+**`pnpm erstbefuellung` kannte die Warnung nicht.** Von den fünf Aufrufern
+war das der einzige, der nicht mitgezogen wurde — und ausgerechnet der, bei
+dem es am meisten zählt: wer die Erstbefüllung einmal laufen lässt und
+Rückgabewert 0 sieht, sieht nie wieder hin. Jetzt Rückgabewert 2 und
+Ausgabe auf stderr, wie beim stündlichen Abgleich.
+
+**`pnpm zonen-probe` fand die `.env` nicht.** Ohne
+`--env-file-if-exists=.env` wäre der Befehl, der im README steht, mit «Zugang
+fehlt» abgebrochen — bei einem Skript, das es allein zum Nachprüfen gibt,
+besonders daneben.
+
+**Nicht eingerichtete Zonengrenzen ergaben eine Kachel über nichts.** Für
+eine Sportartgruppe, die nie eingerichtet wurde, liefert intervals.icu
+`[0, 0, 0, …]`. Ungeprüft wären daraus «100 % Z7» und Beschriftungen wie
+«≤0» und «1–0» geworden. `grenzenBrauchbar()` verlangt positiv und streng
+aufsteigend; sonst bleibt die Kachel weg.
+
+**Eine Liste mit Lücke wurde verschoben statt verworfen.** `hr_zones` und
+`hr_zone_names` wurden gefiltert — ein unbrauchbarer Eintrag in der Mitte
+liess die übrigen nach vorn rutschen, und die Kachel beschriftete den
+falschen Balken. Listen werden jetzt ganz oder gar nicht übernommen: eine
+verschobene Liste ist schlechter als keine, weil sie richtig aussieht.
+
+**Der Befund beklagte ein Feld, auf das es nie ankam.** Gebraucht wird eines
+der erwarteten Felder; die Meldung las sich aber wie «types ist da, type
+fehlt». Das hätte auf eine falsche Spur geführt. Ist eines da, sagt der
+Befund jetzt, dass es an den Werten liegt.
+
+Und eine Ungenauigkeit in dieser Datei selbst: das Beispiel oben in E12.3
+zeigte eine Meldung, die der Code so nicht erzeugen kann — sie behauptete
+«keines davon ist da» und führte `types` zugleich unter den vorhandenen
+Feldern auf. Berichtigt.

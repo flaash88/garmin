@@ -15,7 +15,9 @@ import {
   ausruestungUmwandeln,
   planUmwandeln,
   wellnessUmwandeln,
+  zonenUmwandeln,
 } from './umwandeln'
+import { istLeerbefund, leerbefund } from './leerbefund'
 
 /**
  * Der Abgleich ist ein eigener Vorgang, kein Nebeneffekt einer Anfrage.
@@ -25,6 +27,35 @@ import {
 
 /** Zahl der Schritte eines vollständigen Laufs. */
 export const SCHRITTE = 5
+
+/**
+ * Was ein Schritt zurückgibt.
+ *
+ * `geholt` und `geschrieben` stehen getrennt da, weil der Unterschied
+ * zwischen beiden der eigentliche Befund ist: kam nichts an, ist nichts zu
+ * tun; kam etwas an und blieb nichts übrig, hat die Auswertung die Antwort
+ * nicht verstanden. Siehe lib/abgleich/leerbefund.ts.
+ */
+export interface Schrittergebnis {
+  geholt: number
+  geschrieben: number
+  /** Die Rohsätze — für den Befund im Fall «geholt > 0, geschrieben = 0». */
+  roh: unknown[]
+}
+
+/**
+ * Felder, von denen die jeweilige Auswertung mindestens eines braucht.
+ *
+ * Steht hier und nicht im Umwandler, weil der Befund genau diese Liste der
+ * Antwort gegenüberstellt — die Gegenüberstellung ist der Hinweis.
+ */
+export const PFLICHTFELDER: Record<string, string[]> = {
+  aktivitaeten: ['id', 'start_date_local', 'start_date'],
+  wellness: ['id', 'date', 'day'],
+  plan: ['id', 'start_date_local', 'start_date', 'date'],
+  ausruestung: ['id', 'name'],
+  zonen: ['types', 'type'],
+}
 
 /**
  * Fasst einen Lauf in Zeilen, die den Ausgang **zuerst** nennen.
@@ -44,13 +75,24 @@ export function fortschrittZeilen(f: Fortschritt): string[] {
     zeilen.push(
       `ABGLEICH UNVOLLSTÄNDIG — ${f.fehler.length} von ${schritte} Schritten gescheitert.`,
     )
+  } else if (f.warnungen.length > 0) {
+    /*
+     * Ein Schritt, der nichts verstanden hat, ist nicht «fertig». Geworfen
+     * hat er auch nicht — deshalb eine eigene Stufe zwischen fertig und
+     * gescheitert, und sie steht oben, nicht als Fußnote.
+     */
+    zeilen.push(
+      `ABGLEICH OHNE ERGEBNIS — ${f.warnungen.length} von ${schritte} Schritten ` +
+        'haben Daten geholt und nichts gespeichert.',
+    )
   } else {
     zeilen.push('Abgleich fertig, alle Schritte durchgelaufen.')
   }
 
   for (const fehler of f.fehler) zeilen.push(`  Fehler — ${fehler}`)
+  for (const warnung of f.warnungen) zeilen.push(`  Warnung — ${warnung}`)
 
-  if (f.fehler.length > 0) zeilen.push('')
+  if (f.fehler.length > 0 || f.warnungen.length > 0) zeilen.push('')
   zeilen.push(f.fehler.length > 0 ? 'Geholt (unvollständig):' : 'Geholt:')
   zeilen.push(`  Aktivitäten  ${f.aktivitaeten}`)
   zeilen.push(`  Wellness     ${f.wellness}`)
@@ -69,10 +111,23 @@ export interface Fortschritt {
   ausruestung: number
   zonen: number
   fehler: string[]
+  /**
+   * Schritte, die Daten geholt und nichts gespeichert haben. Kein Fehler —
+   * aber auch kein Erfolg.
+   */
+  warnungen: string[]
 }
 
 function leererFortschritt(): Fortschritt {
-  return { aktivitaeten: 0, wellness: 0, plan: 0, ausruestung: 0, zonen: 0, fehler: [] }
+  return {
+    aktivitaeten: 0,
+    wellness: 0,
+    plan: 0,
+    ausruestung: 0,
+    zonen: 0,
+    fehler: [],
+    warnungen: [],
+  }
 }
 
 function tagText(d: Date): string {
@@ -114,7 +169,7 @@ async function standSchreiben(
 export async function aktivitaetenAbgleichen(
   zugang: IcuZugang,
   vonTag?: string,
-): Promise<number> {
+): Promise<Schrittergebnis> {
   const stand = await standLesen('aktivitaeten')
   const von = vonTag ?? tagText(stand ? tageZurueck(UEBERLAPPUNG_TAGE, stand) : tageZurueck(365))
   const bis = tagText(new Date())
@@ -130,13 +185,13 @@ export async function aktivitaetenAbgleichen(
   }
 
   await standSchreiben('aktivitaeten', new Date(), null)
-  return zeilen.length
+  return { geholt: roh.length, geschrieben: zeilen.length, roh }
 }
 
 export async function wellnessAbgleichen(
   zugang: IcuZugang,
   vonTag?: string,
-): Promise<{ anzahl: number; roh: Rohsatz[] }> {
+): Promise<Schrittergebnis & { saetze: Rohsatz[] }> {
   const stand = await standLesen('wellness')
   const von = vonTag ?? tagText(stand ? tageZurueck(UEBERLAPPUNG_TAGE, stand) : tageZurueck(365))
   const bis = tagText(new Date())
@@ -152,10 +207,15 @@ export async function wellnessAbgleichen(
   }
 
   await standSchreiben('wellness', new Date(), null)
-  return { anzahl: zeilen.length, roh: roh.filter(istSatz) }
+  return {
+    geholt: roh.length,
+    geschrieben: zeilen.length,
+    roh,
+    saetze: roh.filter(istSatz),
+  }
 }
 
-export async function planAbgleichen(zugang: IcuZugang): Promise<number> {
+export async function planAbgleichen(zugang: IcuZugang): Promise<Schrittergebnis> {
   // Plan reicht in die Zukunft; rückwärts genügt ein Monat für den Vergleich
   // von geplant und gelaufen.
   const von = tagText(tageZurueck(30))
@@ -172,10 +232,10 @@ export async function planAbgleichen(zugang: IcuZugang): Promise<number> {
   }
 
   await standSchreiben('plan', new Date(), null)
-  return zeilen.length
+  return { geholt: roh.length, geschrieben: zeilen.length, roh }
 }
 
-export async function ausruestungAbgleichen(zugang: IcuZugang): Promise<number> {
+export async function ausruestungAbgleichen(zugang: IcuZugang): Promise<Schrittergebnis> {
   const roh = await ausruestungHolen(zugang)
   const zeilen = roh.map(ausruestungUmwandeln).filter((z) => z !== null)
 
@@ -187,37 +247,28 @@ export async function ausruestungAbgleichen(zugang: IcuZugang): Promise<number> 
   }
 
   await standSchreiben('ausruestung', new Date(), null)
-  return zeilen.length
+  return { geholt: roh.length, geschrieben: zeilen.length, roh }
 }
 
-export async function zonenAbgleichen(zugang: IcuZugang): Promise<number> {
+export async function zonenAbgleichen(zugang: IcuZugang): Promise<Schrittergebnis> {
   const roh = await zonenHolen(zugang)
-  let anzahl = 0
 
-  for (const satz of roh) {
-    if (!istSatz(satz)) continue
-    const sportart = typeof satz['type'] === 'string' ? satz['type'] : null
-    if (!sportart) continue
+  /*
+   * Ein Satz je Gruppe wird zu einer Zeile je Sportart. Rad- und Laufwerte
+   * unterscheiden sich; wer Läufe auswertet, muss die Laufwerte finden,
+   * ohne die Gruppe kennen zu müssen.
+   */
+  const zeilen = roh.flatMap(zonenUmwandeln)
 
-    const zeile = {
-      sportart,
-      schwellenPuls: typeof satz['lthr'] === 'number' ? Math.round(satz['lthr']) : null,
-      maxPuls: typeof satz['max_hr'] === 'number' ? Math.round(satz['max_hr']) : null,
-      schwellenPaceSekundenJeKm:
-        typeof satz['threshold_pace'] === 'number' ? satz['threshold_pace'] : null,
-      pulsGrenzen: satz['hr_zones'] ?? null,
-      rohdaten: satz,
-    }
-
+  for (const zeile of zeilen) {
     await datenbank()
       .insert(zonen)
       .values(zeile)
       .onConflictDoUpdate({ target: zonen.sportart, set: { ...zeile, geholtAm: new Date() } })
-    anzahl += 1
   }
 
   await standSchreiben('zonen', new Date(), null)
-  return anzahl
+  return { geholt: roh.length, geschrieben: zeilen.length, roh }
 }
 
 /**
@@ -265,25 +316,61 @@ export async function abgleichLaufen(vonTag?: string): Promise<Fortschritt> {
     return fortschritt
   }
 
-  const schritte: Array<[string, string, () => Promise<void>]> = [
+  /*
+   * Jeder Schritt gibt zurück, wie viel ankam und wie viel blieb. Der
+   * Vergleich der beiden Zahlen ist die Warnung — nicht die zweite Zahl
+   * allein.
+   */
+  const schritte: Array<[string, string, () => Promise<Schrittergebnis>]> = [
     ['Aktivitäten', 'aktivitaeten', async () => {
-      fortschritt.aktivitaeten = await aktivitaetenAbgleichen(zugang, vonTag)
+      const e = await aktivitaetenAbgleichen(zugang, vonTag)
+      fortschritt.aktivitaeten = e.geschrieben
+      return e
     }],
     ['Wellness', 'wellness', async () => {
       const e = await wellnessAbgleichen(zugang, vonTag)
-      fortschritt.wellness = e.anzahl
-      await befuellungFesthalten('wellness', e.roh)
+      fortschritt.wellness = e.geschrieben
+      await befuellungFesthalten('wellness', e.saetze)
+      return e
     }],
-    ['Plan', 'plan', async () => { fortschritt.plan = await planAbgleichen(zugang) }],
-    ['Ausrüstung', 'ausruestung', async () => { fortschritt.ausruestung = await ausruestungAbgleichen(zugang) }],
-    ['Zonen', 'zonen', async () => { fortschritt.zonen = await zonenAbgleichen(zugang) }],
+    ['Plan', 'plan', async () => {
+      const e = await planAbgleichen(zugang)
+      fortschritt.plan = e.geschrieben
+      return e
+    }],
+    ['Ausrüstung', 'ausruestung', async () => {
+      const e = await ausruestungAbgleichen(zugang)
+      fortschritt.ausruestung = e.geschrieben
+      return e
+    }],
+    ['Zonen', 'zonen', async () => {
+      const e = await zonenAbgleichen(zugang)
+      fortschritt.zonen = e.geschrieben
+      return e
+    }],
   ]
 
   // Ein gescheiterter Schritt hält die anderen nicht auf. Was geholt werden
   // konnte, liegt danach da; der Fehler steht im Ergebnis und in der Tabelle.
   for (const [name, quelle, schritt] of schritte) {
     try {
-      await schritt()
+      const ergebnis = await schritt()
+
+      /*
+       * Nicht geworfen, aber auch nichts verstanden. Das als Erfolg zu
+       * melden hat schon dreimal einen Befund verdeckt — Ortspunkte,
+       * Wellness-Felder, Zonen. Jetzt steht der Grund dabei, nicht nur die
+       * Null.
+       */
+      if (istLeerbefund(ergebnis.geholt, ergebnis.geschrieben)) {
+        const grund = leerbefund(name, ergebnis.roh, PFLICHTFELDER[quelle] ?? [])
+        fortschritt.warnungen.push(grund)
+        try {
+          await standSchreiben(quelle, new Date(), grund)
+        } catch {
+          // Steht die Datenbank still, ist der Befund im Ergebnis genug.
+        }
+      }
     } catch (fehler) {
       const text = fehler instanceof Error ? fehler.message : 'unbekannter Fehler'
       fortschritt.fehler.push(`${name}: ${text}`)

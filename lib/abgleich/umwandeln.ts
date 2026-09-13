@@ -159,3 +159,100 @@ export function ausruestungUmwandeln(roh: unknown): AusruestungZeile | null {
     rohdaten: roh,
   }
 }
+
+export interface ZonenZeile {
+  sportart: string
+  gruppe: string[]
+  schwellenPuls: number | null
+  maxPuls: number | null
+  schwellenPaceSekundenJeKm: number | null
+  schwellenPaceMeterJeSekunde: number | null
+  pulsGrenzen: number[] | null
+  pulsZonenNamen: string[] | null
+  paceGrenzen: number[] | null
+  rohdaten: Rohsatz
+}
+
+/**
+ * Kleinste und größte Geschwindigkeit, die als Laufen oder Radfahren
+ * durchgeht — in Metern je Sekunde.
+ *
+ * 0,5 m/s sind 33:20/km, 15 m/s sind 1:07/km. Was dazwischen liegt, ist eine
+ * Geschwindigkeit; was darüber liegt, kann nur eine Zeitangabe sein. Ohne
+ * diese Unterscheidung würde eine Schwellenpace von 4,0 m/s als «0:04/km»
+ * angezeigt.
+ */
+const GESCHWINDIGKEIT_MIN = 0.5
+const GESCHWINDIGKEIT_MAX = 15
+
+/**
+ * `threshold_pace` in Sekunden je Kilometer.
+ *
+ * intervals.icu liefert eine **Geschwindigkeit** in Metern je Sekunde. Der
+ * gelieferte Wert wird zusätzlich unverändert abgelegt, damit die Umrechnung
+ * nachprüfbar bleibt und nicht die einzige Fassung ist.
+ */
+export function paceAusGeschwindigkeit(wert: number | null): number | null {
+  if (wert === null || !Number.isFinite(wert) || wert <= 0) return null
+  if (wert < GESCHWINDIGKEIT_MIN || wert > GESCHWINDIGKEIT_MAX) {
+    // Keine plausible Geschwindigkeit. Dann ist es vermutlich schon eine
+    // Zeitangabe — unverändert übernehmen statt eine Zahl zu erfinden.
+    return wert
+  }
+  return 1000 / wert
+}
+
+/**
+ * Listen werden **ganz oder gar nicht** übernommen.
+ *
+ * Einzelne unbrauchbare Einträge herauszufiltern würde die übrigen nach vorn
+ * rutschen lassen — die dritte Zonengrenze stünde dann an zweiter Stelle und
+ * der Zonenname an der falschen. Eine verschobene Liste ist schlechter als
+ * keine: sie sieht richtig aus.
+ */
+function zahlenliste(wert: unknown): number[] | null {
+  if (!Array.isArray(wert) || wert.length === 0) return null
+  const brauchbar = wert.every((z) => typeof z === 'number' && Number.isFinite(z))
+  return brauchbar ? (wert as number[]) : null
+}
+
+function textliste(wert: unknown): string[] | null {
+  if (!Array.isArray(wert) || wert.length === 0) return null
+  const brauchbar = wert.every((z) => typeof z === 'string' && z.length > 0)
+  return brauchbar ? (wert as string[]) : null
+}
+
+/**
+ * Ein Satz aus `/athlete/{id}/sport-settings` wird zu **einer Zeile je
+ * Sportart**.
+ *
+ * Der Befund, der dahintersteckt: gelesen wurde `type` als Zeichenkette.
+ * intervals.icu führt die Sportarten aber als Array unter `types`. Damit war
+ * die Sportart immer `null`, jeder Satz fiel durch, und der Schritt meldete
+ * «Zonen 0» — ohne Fehler. Siehe DECISIONS.md, E12.1.
+ */
+export function zonenUmwandeln(roh: unknown): ZonenZeile[] {
+  if (!istSatz(roh)) return []
+
+  const gruppe =
+    textliste(roh['types']) ??
+    // Ältere Stände und Einzelsätze führen eine einzelne Zeichenkette.
+    (typeof roh['type'] === 'string' && roh['type'].length > 0 ? [roh['type']] : null)
+  if (!gruppe) return []
+
+  const geschwindigkeit = zahlOderNull(roh, 'threshold_pace')
+
+  const gemeinsam = {
+    gruppe,
+    schwellenPuls: ganzzahlOderNull(roh, 'lthr'),
+    maxPuls: ganzzahlOderNull(roh, 'max_hr'),
+    schwellenPaceSekundenJeKm: paceAusGeschwindigkeit(geschwindigkeit),
+    schwellenPaceMeterJeSekunde: geschwindigkeit,
+    pulsGrenzen: zahlenliste(roh['hr_zones']),
+    pulsZonenNamen: textliste(roh['hr_zone_names']),
+    paceGrenzen: zahlenliste(roh['pace_zones']),
+    rohdaten: roh,
+  }
+
+  return gruppe.map((sportart) => ({ sportart, ...gemeinsam }))
+}

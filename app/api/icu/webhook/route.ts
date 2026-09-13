@@ -37,7 +37,12 @@ export async function POST(anfrage: NextRequest) {
     if (fortschritt.fehler.length >= schritte) {
       return NextResponse.json(fortschritt, { status: 502 })
     }
-    if (fortschritt.fehler.length > 0) {
+    /*
+     * Ein Schritt, der Daten geholt und nichts gespeichert hat, ist kein
+     * 200. Der Webhook ist die Stelle, an der niemand hinsieht — dort muss
+     * der Zustand am Statuscode ablesbar sein.
+     */
+    if (fortschritt.fehler.length > 0 || fortschritt.warnungen.length > 0) {
       // Teilweise durchgelaufen. 207 sagt genau das.
       return NextResponse.json(fortschritt, { status: 207 })
     }

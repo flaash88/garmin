@@ -55,7 +55,11 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
     await datenbank().execute(
       sql`delete from ${schema.wellness} where tag between '2026-09-01' and '2026-09-30'`,
     )
+    vi.mocked(endpunkte.zonenHolen).mockReset()
+    vi.mocked(endpunkte.planHolen).mockReset()
+    vi.mocked(endpunkte.ausruestungHolen).mockReset()
     await datenbank().execute(sql`delete from ${schema.abgleich}`)
+    await datenbank().execute(sql`delete from ${schema.zonen}`)
     await datenbank().execute(
       sql`delete from ${schema.feldbefuellung} where quelle = 'wellness'`,
     )
@@ -81,8 +85,8 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
 
   it('schreibt eine Aktivitaet und behaelt den Rohsatz', async () => {
     vi.mocked(endpunkte.aktivitaetenHolen).mockResolvedValue([AKTIVITAET])
-    const anzahl = await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
-    expect(anzahl).toBe(1)
+    const e = await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
+    expect(e.geschrieben).toBe(1)
 
     const zeilen = await eigeneAktivitaeten()
     expect(zeilen).toHaveLength(1)
@@ -129,8 +133,8 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
       { kein: 'gueltiger Satz' },
       { id: 'i2', start_date_local: 'Unfug', type: 'Run' },
     ])
-    const anzahl = await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
-    expect(anzahl).toBe(1)
+    const e = await lauf.aktivitaetenAbgleichen({ schluessel: 'x', athletId: 'i1' })
+    expect(e.geschrieben).toBe(1)
   })
 
   it('haelt fest, welche Wellness-Felder befuellt waren', async () => {
@@ -141,7 +145,7 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
       { id: '2026-09-13', restingHR: 43, soreness: null, skinTemp: null, respiration: null },
     ])
     const e = await lauf.wellnessAbgleichen({ schluessel: 'x', athletId: 'i1' })
-    await lauf.befuellungFesthalten('wellness', e.roh)
+    await lauf.befuellungFesthalten('wellness', e.saetze)
 
     const zeilen = await datenbank().select().from(schema.feldbefuellung)
     const nach = new Map(zeilen.map((z) => [z.feld, z]))
@@ -151,6 +155,88 @@ wenn('Abgleich gegen eine echte Datenbank', () => {
     expect(nach.get('skinTemp')?.befuellt).toBe(0)
     expect(nach.get('respiration')?.befuellt).toBe(0)
     expect(nach.get('skinTemp')?.gesamt).toBe(2)
+  })
+
+  it('speichert Zonen je Sportart aus der echten Antwortform', async () => {
+    // Die Antwort, wie sie im Betrieb ankommt: ein Satz je Gruppe, die
+    // Sportarten als Array unter `types`. Vorher wurde `type` gelesen —
+    // jeder Satz fiel durch, und «Zonen 0» sah aus wie ein Erfolg.
+    vi.mocked(endpunkte.zonenHolen).mockResolvedValue([
+      {
+        types: ['Ride', 'VirtualRide'],
+        lthr: 200,
+        max_hr: 220,
+        hr_zones: [161, 179, 187, 199, 205, 211, 220],
+      },
+      {
+        types: ['Run', 'VirtualRun', 'TrailRun'],
+        lthr: 165,
+        max_hr: 196,
+        hr_zones: [130, 148, 162, 177, 184, 192, 196],
+        threshold_pace: 3.4,
+      },
+    ])
+
+    const e = await lauf.zonenAbgleichen({ schluessel: 'x', athletId: 'i1' })
+    expect(e.geholt).toBe(2)
+    expect(e.geschrieben).toBe(5)
+
+    const zeilen = await datenbank().select().from(schema.zonen)
+    const nach = new Map(zeilen.map((z) => [z.sportart, z]))
+    expect([...nach.keys()].sort()).toEqual(
+      ['Ride', 'Run', 'TrailRun', 'VirtualRide', 'VirtualRun'].sort(),
+    )
+    // Der Punkt: Lauf bekommt die Laufwerte, nicht die Radwerte.
+    expect(nach.get('Run')?.schwellenPuls).toBe(165)
+    expect(nach.get('TrailRun')?.schwellenPuls).toBe(165)
+    expect(nach.get('Ride')?.schwellenPuls).toBe(200)
+    expect(nach.get('Run')?.schwellenPaceSekundenJeKm).toBeCloseTo(294.1, 1)
+  })
+
+  it('meldet einen Schritt ohne Ergebnis als Warnung, nicht als Erfolg', async () => {
+    // Der eigentliche Befund: nicht der Fehler, sondern dass er sich als
+    // Erfolg meldete. Antwort nicht leer, Ergebnis leer — das ist eine
+    // Warnung mit Grund.
+    vi.mocked(endpunkte.aktivitaetenHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.wellnessHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.planHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.ausruestungHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.zonenHolen).mockResolvedValue([
+      { lthr: 165, max_hr: 196, hr_zones: [130, 148, 162, 177, 184, 192, 196] },
+    ])
+
+    const f = await lauf.abgleichLaufen('2026-09-01')
+
+    expect(f.fehler).toHaveLength(0)
+    expect(f.warnungen).toHaveLength(1)
+    expect(f.warnungen[0]).toContain('Zonen')
+    expect(f.warnungen[0]).toContain('1 Satz geholt')
+    // Der Grund nennt, was fehlt — sonst hilft die Warnung nicht weiter.
+    expect(f.warnungen[0]).toContain('types')
+
+    const zeilen = lauf.fortschrittZeilen(f)
+    expect(zeilen[0]).toMatch(/^ABGLEICH OHNE ERGEBNIS/)
+    expect(zeilen[0]).not.toContain('alle Schritte durchgelaufen')
+
+    // Und der Grund steht auch in der Tabelle, nicht nur im Bericht.
+    const stand = await datenbank()
+      .select()
+      .from(schema.abgleich)
+      .where(sql`quelle = 'zonen'`)
+    expect(stand[0]?.zuletztFehler).toContain('types')
+  })
+
+  it('schweigt, wenn die Antwort selbst leer war', async () => {
+    // Nichts geholt, nichts geschrieben ist kein Befund, sondern Ruhe.
+    vi.mocked(endpunkte.aktivitaetenHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.wellnessHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.planHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.ausruestungHolen).mockResolvedValue([])
+    vi.mocked(endpunkte.zonenHolen).mockResolvedValue([])
+
+    const f = await lauf.abgleichLaufen('2026-09-01')
+    expect(f.warnungen).toHaveLength(0)
+    expect(lauf.fortschrittZeilen(f)[0]).toContain('alle Schritte durchgelaufen')
   })
 
   it('uebernimmt Wellness samt CTL, ATL und Form', async () => {

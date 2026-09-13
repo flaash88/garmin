@@ -1,8 +1,9 @@
 import { desc } from 'drizzle-orm'
 import { datenbank } from '@/lib/db'
-import { wellness, zonen } from '@/lib/db/schema'
+import { wellness } from '@/lib/db/schema'
 import { pace, zahl } from '@/lib/format'
 import { zielLesen, zielSatz } from '@/lib/daten/einstellungen'
+import { alleZonensaetze, pulsgrenzen, zuGruppen } from '@/lib/daten/zonen'
 
 /**
  * Athletenprofil als Systemabschnitt: Zonen, Schwellen, Tonfall.
@@ -43,7 +44,7 @@ export async function athletenprofil(): Promise<string> {
   const jetzt = Date.now()
   if (zwischenspeicher && zwischenspeicher.bis > jetzt) return zwischenspeicher.text
 
-  const zonenZeilen = await datenbank().select().from(zonen)
+  const zonenGruppen = zuGruppen(await alleZonensaetze())
   const ziel = await zielLesen()
   const letzte = await datenbank()
     .select()
@@ -56,19 +57,28 @@ export async function athletenprofil(): Promise<string> {
   teile.push(`Du bist der Coach in Takt, einer selbstgehosteten Laufanalyse.
 Der Athlet ist der einzige Nutzer. Die Daten stammen aus intervals.icu.`)
 
-  if (zonenZeilen.length > 0) {
-    const z = zonenZeilen
-      .map((s) => {
-        const stuecke: string[] = [`Sportart ${s.sportart}`]
-        if (s.schwellenPuls) stuecke.push(`Schwellenpuls ${zahl(s.schwellenPuls)}`)
-        if (s.maxPuls) stuecke.push(`Maximalpuls ${zahl(s.maxPuls)}`)
-        if (s.schwellenPaceSekundenJeKm) {
-          stuecke.push(`Schwellenpace ${pace(s.schwellenPaceSekundenJeKm)}`)
+  if (zonenGruppen.length > 0) {
+    const z = zonenGruppen
+      .map((g) => {
+        const stuecke: string[] = []
+        if (g.satz.schwellenPuls) {
+          stuecke.push(`Schwellenpuls ${zahl(g.satz.schwellenPuls)}`)
         }
-        return '  ' + stuecke.join(' · ')
+        if (g.satz.maxPuls) stuecke.push(`Maximalpuls ${zahl(g.satz.maxPuls)}`)
+        if (g.satz.schwellenPaceSekundenJeKm) {
+          stuecke.push(`Schwellenpace ${pace(g.satz.schwellenPaceSekundenJeKm)}`)
+        }
+        const grenzen = pulsgrenzen(g.satz)
+        if (grenzen.length > 0) {
+          stuecke.push(`Zonenobergrenzen ${grenzen.map((x) => zahl(x)).join('/')}`)
+        }
+        return `  ${g.sportarten.join(', ')}: ${stuecke.join(' · ')}`
       })
       .join('\n')
-    teile.push(`Zonen und Schwellen:\n${z}`)
+    teile.push(`Zonen und Schwellen je Sportart:\n${z}
+
+Die Werte gehen je Sportart auseinander. Nimm für eine Laufeinheit die
+Laufwerte, für eine Radeinheit die Radwerte — nie die einen für die anderen.`)
   } else {
     teile.push(
       'Zonen und Schwellen sind nicht hinterlegt. Aussagen zu Zonen daher nur ' +

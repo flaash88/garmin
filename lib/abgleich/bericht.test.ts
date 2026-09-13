@@ -4,7 +4,7 @@ import { fortschrittZeilen, SCHRITTE, type Fortschritt } from './lauf'
 function lauf(teil: Partial<Fortschritt> = {}): Fortschritt {
   return {
     aktivitaeten: 0, wellness: 0, plan: 0, ausruestung: 0, zonen: 0,
-    fehler: [], ...teil,
+    fehler: [], warnungen: [], ...teil,
   }
 }
 

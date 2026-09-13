@@ -6,6 +6,12 @@ import { SymbolAbgleich } from './symbole'
 
 interface Ergebnis {
   fehler: string[]
+  /**
+   * Schritte, die Daten geholt und nichts gespeichert haben. Weder Fehler
+   * noch Erfolg — und genau deshalb ein eigener Zustand: dreimal ist so
+   * etwas als «fertig» durchgegangen.
+   */
+  warnungen: string[]
   zahlen: Record<string, number> | null
 }
 
@@ -29,13 +35,19 @@ export function AbgleichKnopf() {
 
     try {
       const antwort = await fetch('/api/abgleich', { method: 'POST' })
-      const daten = (await antwort.json()) as Ergebnis
+      const roh = (await antwort.json()) as Partial<Ergebnis>
+      const daten: Ergebnis = {
+        fehler: roh.fehler ?? [],
+        warnungen: roh.warnungen ?? [],
+        zahlen: roh.zahlen ?? null,
+      }
       setErgebnis(daten)
       // Die Seite trägt jetzt alte Zahlen — neu holen.
       if (daten.fehler.length === 0) router.refresh()
     } catch (fehler) {
       setErgebnis({
         fehler: [fehler instanceof Error ? fehler.message : 'Netzfehler'],
+        warnungen: [],
         zahlen: null,
       })
     } finally {
@@ -44,7 +56,8 @@ export function AbgleichKnopf() {
   }
 
   const gescheitert = ergebnis !== null && ergebnis.fehler.length > 0
-  const gelungen = ergebnis !== null && ergebnis.fehler.length === 0
+  const gewarnt = ergebnis !== null && !gescheitert && ergebnis.warnungen.length > 0
+  const gelungen = ergebnis !== null && !gescheitert && !gewarnt
 
   return (
     <div className="relative">
@@ -62,18 +75,26 @@ export function AbgleichKnopf() {
       {ergebnis ? (
         <div
           role="status"
-          className={`absolute top-[42px] right-0 z-30 w-[280px] border bg-flaeche p-3 ${
-            gescheitert ? 'border-negativ' : 'border-kontur'
+          className={`absolute top-[42px] right-0 z-30 w-[300px] border bg-flaeche p-3 ${
+            gescheitert ? 'border-negativ' : gewarnt ? 'border-warnung' : 'border-kontur'
           }`}
         >
           <div className="flex items-center gap-[9px]">
             <span
               className={`size-1.5 flex-none rounded-full ${
-                gescheitert ? 'bg-negativ' : 'bg-positiv'
+                gescheitert ? 'bg-negativ' : gewarnt ? 'bg-warnung' : 'bg-positiv'
               }`}
             />
-            <span className={`marke text-[9.5px] ${gescheitert ? 'text-negativ' : 'text-positiv'}`}>
-              {gescheitert ? 'Abgleich unvollständig' : 'Abgleich fertig'}
+            <span
+              className={`marke text-[9.5px] ${
+                gescheitert ? 'text-negativ' : gewarnt ? 'text-warnung' : 'text-positiv'
+              }`}
+            >
+              {gescheitert
+                ? 'Abgleich unvollständig'
+                : gewarnt
+                  ? 'Abgleich ohne Ergebnis'
+                  : 'Abgleich fertig'}
             </span>
             <button
               type="button"
@@ -85,7 +106,7 @@ export function AbgleichKnopf() {
             </button>
           </div>
 
-          {gelungen && ergebnis.zahlen ? (
+          {(gelungen || gewarnt) && ergebnis.zahlen ? (
             <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] text-text-leise">
               {Object.entries(ergebnis.zahlen).map(([name, zahl]) => (
                 <div key={name} className="flex justify-between gap-2">
@@ -100,6 +121,14 @@ export function AbgleichKnopf() {
             <ul className="mt-2.5 space-y-1 font-mono text-[10.5px] leading-relaxed break-words text-text-leise">
               {ergebnis.fehler.slice(0, 3).map((f, i) => (
                 <li key={i}>{f}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          {ergebnis.warnungen.length > 0 ? (
+            <ul className="mt-2.5 space-y-1.5 border-t border-kontur pt-2.5 font-mono text-[10.5px] leading-relaxed break-words text-warnung">
+              {ergebnis.warnungen.slice(0, 3).map((w, i) => (
+                <li key={i}>{w}</li>
               ))}
             </ul>
           ) : null}

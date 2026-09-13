@@ -111,11 +111,34 @@ export const ausruestung = pgTable('ausruestung', {
 
 /** Schwellen und Grenzen der Herzfrequenzzonen aus den Sport-Settings. */
 export const zonen = pgTable('zonen', {
+  /**
+   * **Eine Sportart je Zeile.**
+   *
+   * intervals.icu liefert einen Satz je Gruppe, und die Gruppe steht als
+   * Array unter `types` — etwa `['Run', 'VirtualRun', 'TrailRun']`. Rad- und
+   * Laufwerte unterscheiden sich; wer einen Lauf auswertet, muss die
+   * Laufwerte bekommen. Die Gruppe wird deshalb aufgelöst, und jede Sportart
+   * findet ihre Zeile unter ihrem eigenen Namen.
+   */
   sportart: varchar('sportart', { length: 32 }).primaryKey(),
+  /** Die ganze Gruppe, wie geliefert — damit sichtbar bleibt, was zusammengehört. */
+  gruppe: jsonb('gruppe'),
   schwellenPuls: integer('schwellen_puls'),
   maxPuls: integer('max_puls'),
+  /**
+   * Abgeleitet aus `threshold_pace`. Der gelieferte Wert steht daneben in
+   * `schwellen_pace_meter_je_sekunde` — gerechnet wird nur einmal, und der
+   * Ausgangswert bleibt nachprüfbar.
+   */
   schwellenPaceSekundenJeKm: doublePrecision('schwellen_pace_sekunden_je_km'),
+  /** `threshold_pace`, unverändert wie geliefert. */
+  schwellenPaceMeterJeSekunde: doublePrecision('schwellen_pace_meter_je_sekunde'),
+  /** Sieben Obergrenzen aus `hr_zones`. */
   pulsGrenzen: jsonb('puls_grenzen'),
+  /** `hr_zone_names` — Z1, Z2 … oder eigene Namen. */
+  pulsZonenNamen: jsonb('puls_zonen_namen'),
+  /** `pace_zones`, unverändert wie geliefert. */
+  paceGrenzen: jsonb('pace_grenzen'),
   rohdaten: jsonb('rohdaten'),
   geholtAm: timestamp('geholt_am', { withTimezone: true }).notNull().defaultNow(),
 })

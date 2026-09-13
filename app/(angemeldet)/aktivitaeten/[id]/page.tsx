@@ -4,6 +4,7 @@ import { Karte } from '@/komponenten/karte'
 import { Kachel } from '@/komponenten/zustaende'
 import { aktivitaet, streckeZurAktivitaet } from '@/lib/daten/aktivitaeten'
 import {
+  pulsreiheAusVerlauf,
   rundenAusRohdaten,
   spurAusVerlauf,
   verlaufBesorgen,
@@ -11,6 +12,8 @@ import {
 } from '@/lib/daten/verlauf'
 import { splitGuete, verfall } from '@/lib/analyse/splits'
 import { ausduennen } from '@/lib/analyse/strecken'
+import { zonenAusPulsreihe } from '@/lib/analyse/zonen'
+import { pulsgrenzen, zonenFuerSportart } from '@/lib/daten/zonen'
 import { datum, dauer, mitVorzeichen, pace, strecke, uhrzeit, zahl } from '@/lib/format'
 
 export default async function AktivitaetDetail({
@@ -31,6 +34,19 @@ export default async function AktivitaetDetail({
   const diagnose = spur.length === 0 && daten.length > 0 ? verlaufsdiagnose(daten) : null
   const runden = rundenAusRohdaten(a.rohdaten)
   const zugeordnet = await streckeZurAktivitaet(id)
+
+  /*
+   * Zonen gegen die Grenzen **dieser** Sportart, nicht gegen irgendwelche.
+   * Schwellen- und Maximalpuls gehen zwischen Laufen und Radfahren weit
+   * auseinander; dieselbe Reihe ergäbe sonst eine ganz andere Verteilung.
+   */
+  const zonensatz = await zonenFuerSportart(a.typ)
+  const grenzen = pulsgrenzen(zonensatz)
+  const zonen = grenzen.length > 0 ? zonenAusPulsreihe(pulsreiheAusVerlauf(daten), grenzen) : []
+  const zonenZeit = zonen.reduce((sum, z) => sum + z.sekunden, 0)
+  const zonenNamen = Array.isArray(zonensatz?.pulsZonenNamen)
+    ? (zonensatz.pulsZonenNamen as unknown[]).filter((n): n is string => typeof n === 'string')
+    : []
 
   const guete =
     runden.length >= 2
@@ -98,6 +114,45 @@ export default async function AktivitaetDetail({
             Verlauf nicht geladen · {fehler}
           </span>
         </div>
+      ) : null}
+
+      {zonenZeit > 0 ? (
+        <Kachel
+          marke={`Herzfrequenzzonen · ${a.typ}`}
+          {...(zonensatz?.schwellenPuls
+            ? {
+                nebenmarke:
+                  `Schwellenpuls ${zahl(zonensatz.schwellenPuls)}` +
+                  (zonensatz.maxPuls ? ` · Maximalpuls ${zahl(zonensatz.maxPuls)}` : ''),
+              }
+            : {})}
+        >
+          <div className="space-y-px p-4">
+            {zonen.map((z, i) => (
+              <div key={z.zone} className="flex items-center gap-3">
+                <span className="marke w-16 flex-none text-[9.5px] text-text-schwach">
+                  {zonenNamen[i] ?? `Z${z.zone}`}
+                </span>
+                <span className="w-20 flex-none font-mono text-[10.5px] text-text-schwach">
+                  {i === 0 ? '≤' : `${(grenzen[i - 1] ?? 0) + 1}–`}
+                  {grenzen[i]}
+                </span>
+                <span className="h-2.5 flex-1 bg-flaeche-2">
+                  <span
+                    className="block h-full bg-akzent"
+                    style={{ width: `${(z.anteil * 100).toFixed(1)}%` }}
+                  />
+                </span>
+                <span className="w-24 flex-none text-right font-mono text-[11px] text-text-stark">
+                  {dauer(z.sekunden)}
+                </span>
+                <span className="w-14 flex-none text-right font-mono text-[11px] text-text-leise">
+                  {zahl(z.anteil * 100, 1)} %
+                </span>
+              </div>
+            ))}
+          </div>
+        </Kachel>
       ) : null}
 
       <Karte spur={spur} />

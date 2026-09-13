@@ -168,6 +168,14 @@ oder `ABGLEICH FEHLGESCHLAGEN`, nicht eine Reihe Nullen, die wie ein leeres
 Ergebnis aussieht. Nach dem Beheben einfach erneut aufrufen; der Abgleich
 holt nach, was fehlt.
 
+Dazwischen gibt es einen dritten Ausgang: `ABGLEICH OHNE ERGEBNIS`. Er
+bedeutet, dass ein Schritt Daten geholt und **nichts** gespeichert hat — kein
+Fehler, denn geworfen hat nichts, aber auch kein Erfolg. Die Warnung nennt
+den Grund: welche Felder die Auswertung braucht und welche die Antwort
+tatsächlich führt. Die Rückgabewerte von `pnpm abgleich` sind entsprechend
+**0** sauber, **1** mit Fehlern, **2** ohne Ergebnis; der Webhook antwortet
+dann mit 207 statt 200.
+
 Im Werkzeugabbild liegt `pnpm`, die Befehle aus `package.json` lassen sich
 also direkt aufrufen — `pnpm abgleich`, `pnpm briefing`, `pnpm db:migrate`.
 Der Weg über `node_modules/.bin/…` geht weiterhin auch.
@@ -175,6 +183,20 @@ Der Weg über `node_modules/.bin/…` geht weiterhin auch.
 Danach steht in der Tabelle `feldbefuellung`, welche Wellness-Felder
 intervals.icu überhaupt befüllt. Felder, die über den gesamten Bestand leer
 bleiben, blendet die Oberfläche aus, statt einen Strich zu zeigen.
+
+### Zonen prüfen
+
+Schwellen und Zonengrenzen kommen je Sportartgruppe und werden **je
+Sportart** abgelegt: eine Laufeinheit wird gegen die Laufwerte gerechnet,
+eine Radeinheit gegen die Radwerte. Was intervals.icu liefert und was Takt
+daraus macht, zeigt
+
+```
+pnpm zonen-probe
+```
+
+Es gibt die Antwort ungekürzt aus und stellt die Zeilen daneben, die daraus
+entstünden. Geschrieben wird dabei nichts.
 
 ---
 

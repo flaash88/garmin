@@ -21,6 +21,7 @@ export async function POST() {
     return NextResponse.json({
       gelaufen: gestartet,
       fehler: fortschritt.fehler,
+      warnungen: fortschritt.warnungen,
       zahlen: {
         aktivitaeten: fortschritt.aktivitaeten,
         wellness: fortschritt.wellness,
@@ -35,6 +36,7 @@ export async function POST() {
       {
         gelaufen: false,
         fehler: [fehler instanceof Error ? fehler.message : 'unbekannter Fehler'],
+        warnungen: [],
         zahlen: null,
         zeilen: [],
       },

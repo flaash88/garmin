@@ -102,23 +102,31 @@ export function rampe(vorherCtl: number, jetztCtl: number, tage = RAMPE_TAGE): R
 }
 
 export interface Zonenanteil {
-  zone: 1 | 2 | 3 | 4 | 5
+  /** Eins-basiert. */
+  zone: number
   sekunden: number
   anteil: number
 }
 
 /**
- * Anteile der fünf Herzfrequenzzonen. Eingabe sind Sekunden je Zone.
+ * Anteile der Herzfrequenzzonen. Eingabe sind Sekunden je Zone.
  * Die Anteile summieren sich auf 1, sofern überhaupt Zeit anfiel.
+ *
+ * Die Zahl der Zonen ist wählbar, weil intervals.icu sieben Grenzen je
+ * Sportart führt und nicht fünf. Die Vorgabe bleibt bei fünf, damit ein
+ * Aufruf ohne Angabe rechnet wie zuvor.
  */
-export function zonenanteile(sekundenJeZone: readonly number[]): Zonenanteil[] {
-  const sauber = [0, 1, 2, 3, 4].map((i) => {
+export function zonenanteile(
+  sekundenJeZone: readonly number[],
+  anzahl = 5,
+): Zonenanteil[] {
+  const sauber = Array.from({ length: Math.max(1, anzahl) }, (_, i) => {
     const wert = sekundenJeZone[i]
     return typeof wert === 'number' && Number.isFinite(wert) && wert > 0 ? wert : 0
   })
   const gesamt = sauber.reduce((a, b) => a + b, 0)
   return sauber.map((sekunden, i) => ({
-    zone: (i + 1) as 1 | 2 | 3 | 4 | 5,
+    zone: i + 1,
     sekunden,
     anteil: gesamt === 0 ? 0 : sekunden / gesamt,
   }))

@@ -16,11 +16,26 @@ const fortschritt = await erstbefuellung()
 const dauer = Math.round((Date.now() - begonnen) / 1000)
 
 const gescheitert = fortschritt.fehler.length > 0
+const ohneErgebnis = fortschritt.warnungen.length > 0
+
 for (const zeile of fortschrittZeilen(fortschritt)) {
-  if (gescheitert) console.error(zeile)
+  if (gescheitert || ohneErgebnis) console.error(zeile)
   else console.log(zeile)
 }
 console.log(`\nDauer: ${dauer} s`)
+
+if (!gescheitert && ohneErgebnis) {
+  /*
+   * Geholt und nichts verstanden. Gerade bei der Erstbefüllung ist das die
+   * Stelle, an der es auffallen muss: wer sie einmal laufen lässt und einen
+   * Rückgabewert 0 sieht, sieht nie wieder hin.
+   */
+  console.error(
+    '\nEin Schritt hat Daten geholt und nichts gespeichert. Der Grund steht\n' +
+      'oben. Erst beheben, dann erneut aufrufen — sonst fehlt der Bestand.',
+  )
+  process.exit(2)
+}
 
 if (gescheitert) {
   console.error(

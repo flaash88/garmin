@@ -204,3 +204,13 @@ export function rundenAusRohdaten(rohdaten: unknown): Runde[] {
   }
   return []
 }
+
+/**
+ * Die Pulsreihe eines Verlaufs.
+ *
+ * Wie bei den Ortsdaten wird nicht auf einen Feldnamen gesetzt: heisst die
+ * Reihe anders, käme sonst still nichts zurück — genau der Befund von E10.2.
+ */
+export function pulsreiheAusVerlauf(daten: readonly Rohsatz[]): unknown[] {
+  return reihe(daten, 'heartrate', 'heart_rate', 'hr', 'bpm') ?? []
+}
