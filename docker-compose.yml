@@ -1,0 +1,113 @@
+# =============================================================================
+# Takt — Verbund für den Betrieb.
+#
+#   takt          Webdienst
+#   datenbank     PostgreSQL
+#   zeitplan      stündlicher Abgleich, tägliche Prüfung des Wochenbriefings
+#   sicherung     pg_dump täglich, sieben Stände
+#   tunnel        cloudflared
+#
+#   docker compose up -d
+#
+# Alle Werte kommen aus .env. Siehe .env.beispiel.
+# =============================================================================
+
+name: takt
+
+services:
+  datenbank:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-takt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt}
+      POSTGRES_DB: ${POSTGRES_DB:-takt}
+      # Deutsche Sortierung, damit Namen erwartungsgemäß ordnen.
+      POSTGRES_INITDB_ARGS: '--locale=de_DE.UTF-8 --encoding=UTF8'
+      LANG: de_DE.UTF-8
+    volumes:
+      - datenbank:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-takt} -d ${POSTGRES_DB:-takt}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # Kein Port nach außen. Erreichbar nur im Verbund.
+    expose:
+      - '5432'
+
+  takt:
+    build:
+      context: .
+      target: laufen
+    restart: unless-stopped
+    depends_on:
+      datenbank:
+        condition: service_healthy
+    environment:
+      TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
+      TAKT_SQL_ROLLE_URL: postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}
+      TAKT_PASSWORT_HASH: ${TAKT_PASSWORT_HASH:?TAKT_PASSWORT_HASH fehlt}
+      TAKT_SITZUNG_SECRET: ${TAKT_SITZUNG_SECRET:?TAKT_SITZUNG_SECRET fehlt}
+      TAKT_WEBHOOK_SECRET: ${TAKT_WEBHOOK_SECRET:-}
+      TAKT_IP_KOPF: ${TAKT_IP_KOPF:-cf-connecting-ip}
+      ICU_API_KEY: ${ICU_API_KEY:-}
+      ICU_ATHLET_ID: ${ICU_ATHLET_ID:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TZ: ${TZ:-Europe/Vienna}
+    # Kein Port nach außen: der Tunnel spricht den Dienst im Verbund an.
+    # Zum Ausprobieren ohne Tunnel die nächsten zwei Zeilen einkommentieren.
+    # ports:
+    #   - '127.0.0.1:3000:3000'
+    expose:
+      - '3000'
+
+  zeitplan:
+    build:
+      context: .
+      target: werkzeuge
+    restart: unless-stopped
+    depends_on:
+      datenbank:
+        condition: service_healthy
+    environment:
+      TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
+      TAKT_SQL_ROLLE_URL: postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}
+      ICU_API_KEY: ${ICU_API_KEY:-}
+      ICU_ATHLET_ID: ${ICU_ATHLET_ID:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TZ: ${TZ:-Europe/Vienna}
+
+  sicherung:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      datenbank:
+        condition: service_healthy
+    environment:
+      PGHOST: datenbank
+      PGPORT: '5432'
+      PGUSER: ${POSTGRES_USER:-takt}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-takt}
+      SICHERUNG_VERZEICHNIS: /sicherung
+      SICHERUNG_STAENDE: ${SICHERUNG_STAENDE:-7}
+      TZ: ${TZ:-Europe/Vienna}
+    volumes:
+      - sicherung:/sicherung
+      - ./datenbank/sicherung.sh:/sicherung.sh:ro
+    entrypoint: ['/bin/sh', '/sicherung.sh']
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      - takt
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TOKEN:?CLOUDFLARED_TOKEN fehlt}
+
+volumes:
+  datenbank:
+  sicherung:

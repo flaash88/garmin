@@ -1053,3 +1053,106 @@ gesendet gewöhnt sich das Modell parallele Aufrufe ab.
 Das Wochenbriefing entsteht **einmal wöchentlich**: `briefingBeiBedarf` prüft
 erst, ob für die laufende Kalenderwoche schon eines abgelegt ist. `pnpm
 briefing` ist der Aufruf für den Zeitplan.
+
+---
+
+## Phase 6 — Betrieb
+
+### E6.1 — Zwei Endstufen aus einem Bau
+
+`Dockerfile` hat zwei Ziele statt eines:
+
+- **`laufen`** — der Webdienst. Next erzeugt mit `output: 'standalone'` einen
+  Server, der nur die wirklich benutzten Teile von `node_modules` mitbringt.
+  Gemessen: **44 MB statt 708 MB**. Kein Quelltext, keine Werkzeugkette.
+- **`werkzeuge`** — Abgleich, Wochenbriefing, Wanderungen und die Einrichtung
+  der Coach-Rolle. Braucht Quelltext und Abhängigkeiten, läuft aber nur, wenn
+  jemand es aufruft.
+
+Erst hatte ich beides in ein Abbild gelegt und `node_modules` unter einem
+zweiten Namen mitkopiert. Das war ein Kniff, kein Aufbau: `tsx` löst dort
+nicht auf, wo die Abhängigkeiten nicht liegen. Zwei Ziele sind ehrlicher und
+kürzer.
+
+Geprüft, ohne Docker: der eigenständige Server wurde genau so
+zusammengestellt, wie die `COPY`-Zeilen es tun, und gestartet. Der
+Gesundheitstest antwortet, die Anmeldung liefert 200, die Übersicht leitet um,
+und Schriften, Leaflet, Symbole, Manifest und das CSS aus `.next/static`
+kommen alle mit. Das deckt den häufigsten Fehler bei `standalone` ab —
+vergessene Kopien von `static` und `public`.
+
+### E6.2 — Das Abbild selbst ließ sich hier nicht bauen
+
+**Grenze der Umgebung, offen ausgewiesen.** `docker build` scheitert: die
+Ebenen von Docker Hub sind per Richtlinie gesperrt.
+
+    gateway answered 403 to CONNECT — production.cloudfront.docker.com:443
+
+Das betrifft schon `node:22-alpine`. Entfernt wurde deshalb die Zeile
+`# syntax=docker/dockerfile:1`: sie zieht ein eigenes Frontend-Abbild nach und
+wird für diese Datei nicht gebraucht — es kommt keine BuildKit-eigene Syntax
+vor.
+
+**Was geprüft ist:** `docker compose config` läuft sauber durch, alle fünf
+Dienste lösen auf, und die mit `?` markierten Pflichtvariablen brechen ab,
+wenn sie fehlen. Der Inhalt des Abbilds ist wie oben beschrieben außerhalb
+von Docker nachgestellt und geprüft.
+
+**Was nicht geprüft ist:** dass `docker build` durchläuft und der Verbund
+startet. Beides ist ein Lauf von Minuten auf einem Rechner mit Zugang zu
+Docker Hub.
+
+### E6.3 — Kein Port nach außen
+
+Weder `takt` noch `datenbank` veröffentlichen einen Port; beide stehen nur
+unter `expose` im Verbund. Erreichbar ist Takt allein über den Tunnel. Die
+Zeilen zum Veröffentlichen stehen auskommentiert im `docker-compose.yml`, für
+den Fall, dass jemand ohne Tunnel ausprobieren will — an `127.0.0.1`
+gebunden, nicht an alle Schnittstellen.
+
+### E6.4 — Sicherung, und zwar eine zurückgespielte
+
+`pg_dump` täglich, sieben Stände. Zwei Feinheiten, die den Unterschied machen:
+
+**Erst unter Zwischennamen schreiben, dann umbenennen.** Bricht der Lauf
+mitten hinein ab, bleibt keine halbe Datei liegen, die wie ein gültiger Stand
+aussieht. Das Umbenennen im selben Dateisystem ist unteilbar.
+
+**Geprüft mit 21 Läufen bei einer Grenze von sieben:** 14 alte Stände
+entfernt, sieben vorhanden, null `.unfertig`-Reste.
+
+Und der Teil, ohne den eine Sicherung keine ist — **zurückgespielt**: der
+jüngste Stand in eine frische Datenbank, danach verglichen. Gleiche Zahlen in
+allen Tabellen, 11 Tabellen, 8 Views im Auswertungsschema.
+
+### E6.5 — Rollen stehen nicht im Dump, und das README sagt es zu Recht
+
+`pg_dump` sichert eine Datenbank, keine Rollen — und mit `--no-privileges`
+auch die Rechte nicht. Nach dem Einspielen kommt der Coach nicht an die Daten:
+
+    ERROR: relation "aktivitaeten" does not exist
+
+Nach `bash datenbank/einrichten.sh` liest er wieder. Beides nachgeprüft, statt
+die Zeile im README auf gut Glück hinzuschreiben.
+
+### E6.6 — Zeitplan als Prozess, nicht als cron
+
+Der Dienst `zeitplan` ist ein Node-Prozess mit zwei Intervallen statt eines
+cron im Behälter: ein Prozess, ein Protokoll, ein Neustart. Er läuft einmal
+gleich zu Beginn, damit ein Neustart nicht eine Stunde kostet, und beendet
+auf `SIGTERM` sauber.
+
+Das Wochenbriefing wird **täglich angestoßen**, nicht wöchentlich geplant:
+`briefingBeiBedarf` prüft selbst, ob für die laufende Kalenderwoche schon
+eines vorliegt. Daraus wird von selbst „einmal wöchentlich", und ein
+Neustart am Dienstag holt ein verpasstes Briefing nach.
+
+Im Lauf geprüft: startet, meldet den fehlenden `ICU_API_KEY` als Zeile im
+Protokoll statt abzustürzen, beendet auf `SIGTERM` mit einer Meldung.
+
+### E6.7 — `.env.beispiel` und `docker-compose.yml` decken sich
+
+Vierzehn Variablen, maschinell gegeneinander geprüft: keine im Verbund, die
+im Beispiel fehlt, und keine im Beispiel, die der Verbund nicht kennt. Die
+Pflichtwerte tragen `${…:?…}` und brechen den Start mit einer deutschen
+Meldung ab, statt mit einem leeren Wert weiterzulaufen.
