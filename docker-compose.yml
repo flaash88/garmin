@@ -22,9 +22,18 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-takt}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt}
       POSTGRES_DB: ${POSTGRES_DB:-takt}
-      # Deutsche Sortierung, damit Namen erwartungsgemäß ordnen.
-      POSTGRES_INITDB_ARGS: '--locale=de_DE.UTF-8 --encoding=UTF8'
-      LANG: de_DE.UTF-8
+      # C.UTF-8, nicht de_DE.UTF-8.
+      #
+      # Das Alpine-Abbild baut auf musl und bringt keine Gebietsdaten mit;
+      # initdb bricht mit de_DE.UTF-8 ab oder fällt stillschweigend auf
+      # Byte-Reihenfolge zurück — die deutsche Sortierung wäre dann nur
+      # behauptet. C.UTF-8 gibt es überall und sortiert nach Byte-Reihenfolge.
+      #
+      # Wird deutsche Sortierung später wirklich gebraucht, geht das ohne
+      # neues initdb je Spalte:
+      #   CREATE COLLATION deutsch (provider = icu, locale = 'de-AT');
+      #   ALTER TABLE … ALTER COLUMN name TYPE text COLLATE deutsch;
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C.UTF-8'
     volumes:
       - datenbank:/var/lib/postgresql/data
     healthcheck:
@@ -47,7 +56,11 @@ services:
         condition: service_healthy
     environment:
       TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
-      TAKT_SQL_ROLLE_URL: postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}
+      # Nur setzen, wenn ein Passwort hinterlegt ist. Sonst stünde hier eine
+      # Zeichenkette mit leerem Passwort, der Wächter in sql-ausfuehren.ts
+      # griffe nie, und statt «Der Coach braucht eine eigene Rolle» käme ein
+      # nackter Anmeldefehler aus der Datenbank.
+      TAKT_SQL_ROLLE_URL: ${TAKT_COACH_PASSWORT:+postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}}
       TAKT_PASSWORT_HASH: ${TAKT_PASSWORT_HASH:?TAKT_PASSWORT_HASH fehlt}
       TAKT_SITZUNG_SECRET: ${TAKT_SITZUNG_SECRET:?TAKT_SITZUNG_SECRET fehlt}
       TAKT_WEBHOOK_SECRET: ${TAKT_WEBHOOK_SECRET:-}
@@ -73,7 +86,7 @@ services:
         condition: service_healthy
     environment:
       TAKT_DATENBANK_URL: postgres://${POSTGRES_USER:-takt}:${POSTGRES_PASSWORD}@datenbank:5432/${POSTGRES_DB:-takt}
-      TAKT_SQL_ROLLE_URL: postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}
+      TAKT_SQL_ROLLE_URL: ${TAKT_COACH_PASSWORT:+postgres://takt_coach:${TAKT_COACH_PASSWORT}@datenbank:5432/${POSTGRES_DB:-takt}}
       ICU_API_KEY: ${ICU_API_KEY:-}
       ICU_ATHLET_ID: ${ICU_ATHLET_ID:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

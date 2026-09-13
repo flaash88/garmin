@@ -1156,3 +1156,55 @@ Vierzehn Variablen, maschinell gegeneinander geprüft: keine im Verbund, die
 im Beispiel fehlt, und keine im Beispiel, die der Verbund nicht kennt. Die
 Pflichtwerte tragen `${…:?…}` und brechen den Start mit einer deutschen
 Meldung ab, statt mit einem leeren Wert weiterzulaufen.
+
+### E6.8 — Sechs Befunde aus `/code-review`, alle behoben
+
+Der erste ist stiller Datenverlust gewesen.
+
+**Die Sicherung wertete den Rückgabewert von `gzip`, nicht den von
+`pg_dump`.** In `pg_dump | gzip > datei` zählt ohne `pipefail` nur das letzte
+Glied. Ein abgebrochener Dump wurde damit als gültiger Stand umbenannt — und
+die Rotation löschte dafür einen guten. Nachgestellt: `false | gzip` meldet
+Erfolg.
+
+Drei Änderungen: `pipefail`, sofern die Shell es kann (busybox-ash und bash
+können, dash nicht — deshalb erst fragen, dann setzen), dazu **zwei
+Prüfungen auf den Inhalt**, die unabhängig von Rückgabewerten greifen: ob
+das gzip heil ist, und ob die Schlusszeile `PostgreSQL database dump
+complete` darin steht. Ein abgebrochener Dump kann nämlich als gültiges gzip
+enden. Geprüft gegen eine Datenbank, die es nicht gibt: null Stände
+geschrieben.
+
+**Ein base64-Passwort machte die Verbindungszeichenkette unbrauchbar.** Das
+README ließ `POSTGRES_PASSWORD` mit `openssl rand -base64 32` erzeugen; in
+rund drei von vier Fällen steckt darin ein `/` oder `+`. Gemessen: von fünf
+Passwörtern enthielt eines einen Schrägstrich, und
+`new URL('postgres://takt:ab/cd+ef==@…')` wirft `Invalid URL`. Die Datenbank
+wäre gesund gestartet und erst die Anwendung gescheitert. Beide Passwörter,
+die in eine DSN gehen, werden jetzt als **hex** erzeugt; die Geheimnisse, die
+nirgends eingesetzt werden, bleiben base64.
+
+**Zurückspielen über einen vorhandenen Bestand brach ab.** Der Dump trug kein
+`--clean --if-exists`, `psql` lief mit `ON_ERROR_STOP=1`, und beim ersten
+`CREATE TABLE` war Schluss — obwohl das Skript Überschreiben zusagte. E6.4
+hatte nur gegen eine **frische** Datenbank geprüft; genau die Lücke, vor der
+die Lehre aus Phase 4 warnt. Jetzt mit `--clean --if-exists`, und zweimal
+hintereinander in dieselbe Datenbank eingespielt.
+
+**`de_DE.UTF-8` auf einem Alpine-Abbild.** musl bringt keine Gebietsdaten
+mit; `initdb` bricht ab oder fällt stillschweigend auf Byte-Reihenfolge
+zurück — die deutsche Sortierung wäre dann nur behauptet. Jetzt `C.UTF-8`,
+und im README steht, was das heißt (Umlaute hinter `z`) und wie sich
+deutsche Sortierung je Spalte über ICU nachrüsten lässt, ohne neues `initdb`.
+
+**Der Wiederherstellungsweg im README konnte die Datenbank nicht
+erreichen.** Sie veröffentlicht keinen Port, und ihr Name gibt es nur im
+Verbund — ausgerechnet der Notfallweg lief ins Leere. Jetzt über
+`docker compose exec` im Verbund, mit dem Dienst `sicherung` als Weg, weil
+der das Volume ohnehin eingehängt hat.
+
+**`TAKT_SQL_ROLLE_URL` war immer gesetzt.** Ohne `TAKT_COACH_PASSWORT` stand
+dort eine Zeichenkette mit leerem Passwort; der Wächter in
+`sql-ausfuehren.ts`, der „Der Coach braucht eine eigene Rolle" sagen soll,
+griff nie, und stattdessen kam ein nackter Anmeldefehler aus der Datenbank.
+Jetzt `${TAKT_COACH_PASSWORT:+…}` — ohne Passwort bleibt die Variable leer.

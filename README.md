@@ -33,10 +33,16 @@ cp .env.beispiel .env
 Die mit *(nötig)* markierten Werte ausfüllen. Zwei davon werden erzeugt:
 
 ```
-openssl rand -base64 32     # POSTGRES_PASSWORD
+openssl rand -hex 32        # POSTGRES_PASSWORD, TAKT_COACH_PASSWORT
 openssl rand -base64 48     # TAKT_SITZUNG_SECRET
-openssl rand -base64 32     # TAKT_WEBHOOK_SECRET, TAKT_COACH_PASSWORT
+openssl rand -base64 32     # TAKT_WEBHOOK_SECRET
 ```
+
+Die beiden ersten bewusst als **hex**: sie werden in eine
+Verbindungszeichenkette `postgres://benutzer:passwort@…` eingesetzt, und
+base64 liefert in rund drei von vier Fällen ein `/` oder `+`. Ein `/` macht
+die Zeichenkette unbrauchbar — die Datenbank startet trotzdem gesund, und
+erst die Anwendung scheitert.
 
 Der Passwort-Hash kommt aus einem eigenen Skript. Es fragt verdeckt und
 schreibt nichts in die Verlaufsdatei der Shell:
@@ -146,19 +152,63 @@ Stände ansehen:
 docker compose exec sicherung ls -lh /sicherung
 ```
 
-Einen Stand herausholen:
+Einen Stand auf den eigenen Rechner holen:
 
 ```
 docker compose cp sicherung:/sicherung/takt-20260913-030000.sql.gz .
 ```
 
-Zurückspielen — überschreibt den Bestand:
+### Zurückspielen
+
+Die Datenbank veröffentlicht keinen Port — sie ist nur im Verbund
+erreichbar. Das Einspielen läuft deshalb **im Verbund**, nicht vom eigenen
+Rechner aus:
 
 ```
-TAKT_DATENBANK_URL=… bash datenbank/sicherung-einspielen.sh takt-20260913-030000.sql.gz
+docker compose exec -T datenbank sh -c \
+  'gunzip -c /sicherung/takt-20260913-030000.sql.gz | psql -U takt -d takt' \
+  < /dev/null
 ```
 
-Danach die Coach-Rolle neu einrichten: Rollen stehen nicht im Dump.
+Dafür muss der Dienst `datenbank` das Sicherungs-Volume sehen. Ist er ohne
+angelegt, geht es über den Dienst `sicherung`, der es ohnehin eingehängt hat:
+
+```
+docker compose exec -T sicherung sh -c \
+  'gunzip -c /sicherung/takt-20260913-030000.sql.gz | psql'
+```
+
+Die Stände tragen `--clean --if-exists`: sie räumen vorhandene Tabellen
+selbst weg und lassen sich damit über einen bestehenden Bestand einspielen.
+
+Läuft der Verbund nicht, hilft `datenbank/sicherung-einspielen.sh` gegen eine
+Datenbank, die von Hand erreichbar ist:
+
+```
+TAKT_DATENBANK_URL=postgres://… bash datenbank/sicherung-einspielen.sh takt-….sql.gz
+```
+
+**Nach jedem Zurückspielen die Coach-Rolle neu einrichten.** `pg_dump`
+sichert eine Datenbank, keine Rollen — und mit `--no-privileges` auch die
+Rechte nicht. Ohne diesen Schritt meldet der Coach
+`relation "aktivitaeten" does not exist`:
+
+```
+docker compose run --rm \
+  -e TAKT_COACH_PASSWORT="$(grep '^TAKT_COACH_PASSWORT=' .env | cut -d= -f2-)" \
+  zeitplan sh datenbank/einrichten.sh
+```
+
+### Was die Sicherung prüft
+
+Geschrieben wird erst unter einem Zwischennamen, dann umbenannt — bricht der
+Lauf ab, bleibt keine halbe Datei liegen, die wie ein gültiger Stand
+aussieht. Danach zwei Prüfungen auf den Inhalt: ob das gzip heil ist, und ob
+die Schlusszeile von `pg_dump` darin steht. Ein abgebrochener Dump kann
+nämlich als gültiges gzip enden.
+
+Erst wenn beides stimmt, wird umbenannt und erst dann ein alter Stand
+entfernt.
 
 ---
 
@@ -171,6 +221,22 @@ curl https://<deine-adresse>/api/health
 Antwortet ohne Anmeldung mit `{"zustand":"ok","zeit":"…"}`. Der Endpunkt
 verrät nichts über den Stand der Daten. Der Verbund nutzt denselben Pfad für
 seinen eigenen Test.
+
+---
+
+## Sortierung
+
+Die Datenbank wird mit `C.UTF-8` angelegt, nicht mit `de_DE.UTF-8`: das
+Alpine-Abbild bringt keine Gebietsdaten mit, und eine behauptete deutsche
+Sortierung wäre keine. Namen ordnen daher nach Byte-Reihenfolge — Umlaute
+stehen hinter `z`.
+
+Wird das je stören, geht es ohne neues `initdb` je Spalte:
+
+```sql
+CREATE COLLATION deutsch (provider = icu, locale = 'de-AT');
+ALTER TABLE aktivitaeten ALTER COLUMN name TYPE text COLLATE deutsch;
+```
 
 ---
 

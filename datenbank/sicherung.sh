@@ -11,6 +11,12 @@
 
 set -eu
 
+# In einer Kette zaehlt sonst nur der letzte Rueckgabewert. `pg_dump | gzip`
+# meldete damit Erfolg, sobald gzip gelang — auch wenn pg_dump abgebrochen
+# hatte. Busybox-ash und bash koennen pipefail, dash nicht; deshalb erst
+# fragen, dann setzen.
+( set -o pipefail ) 2>/dev/null && set -o pipefail
+
 VERZEICHNIS="${SICHERUNG_VERZEICHNIS:-/sicherung}"
 STAENDE="${SICHERUNG_STAENDE:-7}"
 ABSTAND="${SICHERUNG_ABSTAND_SEKUNDEN:-86400}"
@@ -27,14 +33,31 @@ sichern() {
   # Erst unter anderem Namen schreiben, dann umbenennen. Bricht der Lauf
   # mitten hinein ab, bleibt keine halbe Datei liegen, die wie ein gültiger
   # Stand aussieht.
-  if pg_dump --no-owner --no-privileges | gzip -9 > "$UNFERTIG"; then
-    mv "$UNFERTIG" "$STAND"
-    melden "Stand geschrieben: $(basename "$STAND") ($(du -h "$STAND" | cut -f1))"
-  else
+  #
+  # --clean --if-exists, damit sich der Stand über einen vorhandenen Bestand
+  # einspielen lässt. Ohne das bricht psql beim ersten CREATE TABLE ab.
+  if ! pg_dump --no-owner --no-privileges --clean --if-exists        | gzip -9 > "$UNFERTIG"; then
     rm -f "$UNFERTIG"
     melden "FEHLER: pg_dump fehlgeschlagen, kein Stand geschrieben."
     return 1
   fi
+
+  # Zwei Prüfungen auf den Inhalt, unabhängig von Rückgabewerten.
+  # Ein abgebrochener Dump kann als gültiges gzip enden; die Schlusszeile,
+  # die pg_dump schreibt, fehlt dann.
+  if ! gzip -t "$UNFERTIG" 2>/dev/null; then
+    rm -f "$UNFERTIG"
+    melden "FEHLER: Stand ist kein gültiges gzip, verworfen."
+    return 1
+  fi
+  if ! gunzip -c "$UNFERTIG" | tail -5 | grep -q 'PostgreSQL database dump complete'; then
+    rm -f "$UNFERTIG"
+    melden "FEHLER: Stand bricht vorzeitig ab, verworfen."
+    return 1
+  fi
+
+  mv "$UNFERTIG" "$STAND"
+  melden "Stand geschrieben: $(basename "$STAND") ($(du -h "$STAND" | cut -f1))"
 
   # Älteste wegräumen. Sortiert wird nach Namen; der trägt den Zeitstempel.
   ANZAHL=$(find "$VERZEICHNIS" -name 'takt-*.sql.gz' -type f | wc -l)
