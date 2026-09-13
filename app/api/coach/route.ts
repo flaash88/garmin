@@ -70,7 +70,8 @@ export async function POST(anfrage: NextRequest) {
       }
 
       try {
-        for await (const e of coachFragen(frage, verlauf, (name) => {
+        for await (const e of coachFragen(frage, verlauf, ({ name, erlaubt }) => {
+          if (erlaubt) return
           // Ein abgewiesenes Werkzeug ist eine Zeile im Strom, kein stiller
           // Vorgang — wer zusieht, soll es sehen.
           senden({

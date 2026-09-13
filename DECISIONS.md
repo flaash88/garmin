@@ -1444,3 +1444,100 @@ einer Zahl beginnt.
 heraus, und der Aufrufer bekam einen nackten Stapelauszug statt eines
 Berichts. Jetzt wird der Zugang innerhalb der Funktion geprüft und als
 Fehlschlag aller fünf Schritte gemeldet.
+
+---
+
+## Phase 9 — Verschattete Genehmigungsprüfung
+
+### E9.1 — `allowedTools` hat `canUseTool` für alle sieben Werkzeuge ausgehebelt
+
+**Befund aus dem Betrieb.** Das SDK warnt beim Start:
+
+    CLAUDE_SDK_CAN_USE_TOOL_SHADOWED: canUseTool will not be invoked for:
+    mcp__takt__aktivitaeten, … , mcp__takt__sql_abfrage. Bare allowedTools
+    entries auto-approve the whole tool before the callback is consulted.
+
+Nachgelesen im Bündel des SDK: Einträge in `allowedTools` **ohne Klammern**
+gelten als vorab genehmigt, und der Rückruf wird für sie übersprungen. Alle
+sieben Einträge waren nackte Namen.
+
+**Was das tatsächlich ausgehebelt hat — und was nicht.** Die Bestandsaufnahme
+war der erste Schritt, vor jeder Änderung:
+
+| Schranke | Wo sie sitzt | Von der Verschattung berührt |
+|---|---|---|
+| Nur die sieben eigenen Werkzeuge dürfen laufen | `canUseTool` | **ja** |
+| Eine Anweisung je Aufruf, nur SELECT, Zeilengrenze | Werkzeug (`sqlPruefen`) | nein |
+| Lesetransaktion, `SET LOCAL statement_timeout` | Werkzeug (`sqlAusfuehren`) | nein |
+| Fehlende Rechte der Rolle `takt_coach` | Datenbank | nein |
+| Umschlag um Text des Athleten | Werkzeug | nein |
+| Eingebaute Werkzeuge abgeschaltet (`tools: []`) | Laufzeit | nein |
+| Namentliche Sperren (`disallowedTools`) | Laufzeit | nein |
+| Keine Umgebung, keine Einstellungen geerbt | Laufzeit | nein |
+
+Die Absicherung von `sql_abfrage` liegt vollständig im Werkzeug und in der
+Datenbank. Sie war nie betroffen — nachgewiesen, nicht gehofft: die Tests über
+den Agentenpfad zeigen die Wache in Aktion, und sie blieben grün, als die
+Verschattung zur Gegenprobe wieder eingebaut wurde.
+
+Ausgehebelt war die **eine** Sache, die in `canUseTool` sitzt: die Grundhaltung
+„ablehnen, was nicht zu Takt gehört". Da die eigenen sieben ohnehin erlaubt
+sind, war die Wirkung in der Sache gering — aber niemand konnte das wissen,
+solange die Warnung stand.
+
+**Behoben** wie das SDK es selbst vorschlägt: `allowedTools` ist entfernt. Die
+Werkzeuge fallen damit in den Rückruf durch, und die Entscheidung liegt wieder
+an einer Stelle. Ein `PreToolUse`-Hook wäre der andere Weg gewesen; die
+kürzere Änderung schien mir die bessere, weil sie eine Möglichkeit wegnimmt,
+statt eine zweite hinzuzufügen.
+
+### E9.2 — Die alten Tests hatten genau diesen blinden Fleck
+
+**Eigener Fehler, und der lehrreichste bisher.** Die Tests aus E5.4 riefen
+`nurEigeneWerkzeuge()` unmittelbar auf. Sie prüften damit die *Funktion*, nicht
+den *Pfad* — und waren grün, während der Rückruf im echten Ablauf gar nicht
+gefragt wurde.
+
+Neu ist `lib/coach/agent-pfad.test.ts`: der **echte Agent** läuft, nachgebaut
+ist nur das Modell dahinter (`lib/coach/proben/falsche-api.ts`, ein kleiner
+HTTP-Server, der die Messages-API spricht und nach Drehbuch antwortet). Neun
+Tests, elf Sekunden:
+
+- keine Verschattungswarnung mehr
+- `canUseTool` wird für die eigenen Werkzeuge gefragt
+- genau sieben Werkzeuge im Angebot, keine fremden
+- `Bash` kommt nicht einmal bis zur Genehmigung
+- ein fremdes MCP-Werkzeug läuft nicht
+- die Wache weist mehrere Anweisungen und ein schreibendes CTE ab
+- eine harmlose Abfrage läuft durch
+- `public` bleibt unerreichbar
+
+**Gegenprobe gemacht**, weil ein Test erst zählt, wenn er den Fehler auch
+fängt: mit wieder eingebautem `allowedTools` fallen genau zwei Tests um — die
+Warnung und der Rückruf. Die sieben übrigen bleiben grün und bestätigen damit
+die Tabelle oben.
+
+Der Rückruf meldet jetzt **jede** Entscheidung, nicht nur Ablehnungen. Vorher
+liess sich nicht unterscheiden, ob nichts abgewiesen wurde oder ob niemand
+gefragt hat.
+
+### E9.3 — Probe für die Einschleusung liegt im Repo
+
+`datenbank/probe-einschleusung.sql` legt zwei Aktivitäten an. Die Tabelle hat
+kein Notizfeld, der Text steht deshalb an den zwei Stellen, die es gibt:
+
+- **`name`** — geht als `name_des_athleten` in Guillemets an den Coach.
+- **`rohdaten`** — als **Gegenprobe**. Die Views des Auswertungsschemas führen
+  die Spalte nicht (E5.1); taucht der Text dort je in einer Antwort auf, kommt
+  der Coach an Daten, die er nicht sehen sollte. Nachgeprüft: als Rolle
+  `takt_coach` liefert `select rohdaten from aktivitaeten` ein
+  `column "rohdaten" does not exist`, und im Werkzeugergebnis kommt der
+  Rohsatz nicht vor.
+
+Die zweite Aktivität versucht, den Umschlag mit eigenen Guillemets
+aufzubrechen. Nachgeprüft: beide Texte kommen mit genau einem äußeren
+Guillemet-Paar an, innen ist keines übrig.
+
+Wie die Probe auszuführen und zu bewerten ist, steht im README und im Kopf des
+Skripts. Der Ausgang bleibt offen, bis sie mit einem gültigen Token durch die
+Oberfläche gelaufen ist.

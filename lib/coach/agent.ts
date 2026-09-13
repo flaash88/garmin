@@ -60,7 +60,14 @@ export const VERBOTENE_WERKZEUGE = [
 
 const SERVER_NAME = 'takt'
 
-/** Die erlaubten Werkzeuge, unter ihrem vollen MCP-Namen. */
+/**
+ * Die erlaubten Werkzeuge, unter ihrem vollen MCP-Namen.
+ *
+ * Diese Liste geht **nicht** nach `allowedTools`. Nackte Namen dort genehmigen
+ * das Werkzeug vorab, bevor `canUseTool` gefragt wird — das SDK warnt darüber
+ * mit `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`. Die Liste dient jetzt allein als
+ * Maßstab für `nurEigeneWerkzeuge`. Siehe DECISIONS.md, E9.1.
+ */
 export const ERLAUBTE_WERKZEUGE = [
   'aktivitaeten',
   'verlauf',
@@ -169,6 +176,20 @@ export function mcpServerBauen(melden: (m: WerkzeugMeldung) => void) {
 export function nurEigeneWerkzeuge(
   protokoll?: (name: string, erlaubt: boolean) => void,
 ): CanUseTool {
+  /*
+   * Was hier entschieden wird und was nicht — damit klar ist, was an dieser
+   * Schranke hängt:
+   *
+   *   HIER:         ob ein Werkzeug überhaupt laufen darf. Deny als
+   *                 Grundhaltung; nur die sieben eigenen kommen durch.
+   *
+   *   NICHT HIER:   was `sql_abfrage` mit der Abfrage macht. Die Wache
+   *                 (eine Anweisung, nur SELECT, Zeilengrenze), die
+   *                 Lesetransaktion, die Zeitschranke und die fehlenden
+   *                 Rechte der Rolle takt_coach sitzen im Werkzeug und in
+   *                 der Datenbank. Sie waren von der Verschattung nie
+   *                 berührt.
+   */
   return async (name, eingabe) => {
     const erlaubt = ERLAUBTE_WERKZEUGE.includes(name)
     protokoll?.(name, erlaubt)
@@ -249,10 +270,22 @@ export interface CoachEreignis {
  * Einstellungen und Plugins des Arbeitsverzeichnisses ein — Inhalte, die mit
  * der Laufanalyse nichts zu tun haben und die Werkzeugliste erweitern könnten.
  */
+export interface Werkzeugentscheidung {
+  name: string
+  erlaubt: boolean
+}
+
 export async function* coachFragen(
   frage: string,
   verlauf: Array<{ rolle: 'du' | 'coach'; text: string }> = [],
-  abgewiesenMelden?: (name: string) => void,
+  /**
+   * Wird für **jede** Entscheidung gerufen, nicht nur für Ablehnungen.
+   *
+   * Vorher meldete der Rückruf nur Abweisungen. Damit liess sich nicht
+   * unterscheiden, ob nichts abgewiesen wurde oder ob `canUseTool` gar nicht
+   * gefragt wurde — genau der blinde Fleck, den die Verschattung erzeugt hat.
+   */
+  entscheidungMelden?: (e: Werkzeugentscheidung) => void,
 ): AsyncGenerator<CoachEreignis> {
   const zugang = zugangPruefen()
   if (zugang.art !== 'da') {
@@ -314,12 +347,20 @@ export async function* coachFragen(
          * CronCreate. Nachgewiesen in DECISIONS.md, E5.4.
          */
         tools: [],
-        allowedTools: ERLAUBTE_WERKZEUGE,
+        /*
+         * Kein `allowedTools`.
+         *
+         * Nackte Namen dort genehmigen das Werkzeug vorab und `canUseTool`
+         * wird für sie gar nicht mehr gefragt — für alle sieben eigenen
+         * Werkzeuge einschließlich sql_abfrage. Ohne die Liste fallen sie in
+         * den Rückruf durch, und die Entscheidung liegt wieder an einer
+         * Stelle. Das SDK nennt genau diesen Weg in seiner Warnung.
+         */
         // Zusätzlich namentlich, falls `tools` je anders ausgelegt wird.
         disallowedTools: VERBOTENE_WERKZEUGE,
         // Der eigentliche Riegel. Siehe nurEigeneWerkzeuge.
         canUseTool: nurEigeneWerkzeuge((name, erlaubt) => {
-          if (!erlaubt) abgewiesenMelden?.(name)
+          entscheidungMelden?.({ name, erlaubt })
         }),
         permissionMode: 'default',
         /*
