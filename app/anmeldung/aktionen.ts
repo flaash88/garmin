@@ -21,14 +21,22 @@ export interface AnmeldeStand {
  */
 const MELDUNG = 'Passwort falsch'
 
+/**
+ * Herkunft für den Zähler je IP.
+ *
+ * `X-Forwarded-For` wird bewusst **nicht** genommen: den Kopf setzt der
+ * Aufrufer, und wer bei jeder Anfrage eine andere IP behauptet, landet in
+ * lauter frischen Töpfen. Genommen wird nur ein Kopf, den der Verbund selbst
+ * setzt — vor cloudflared ist das `CF-Connecting-IP`. Ein anderer Aufbau
+ * trägt den Namen in `TAKT_IP_KOPF` nach.
+ *
+ * Fällt nichts ab, zählt der Topf über alles; der greift ohnehin immer.
+ */
 async function herkunft(): Promise<string> {
   const kopf = await headers()
-  const weitergereicht = kopf.get('x-forwarded-for')
-  if (weitergereicht) {
-    const erste = weitergereicht.split(',')[0]?.trim()
-    if (erste) return erste
-  }
-  return kopf.get('x-real-ip') ?? 'unbekannt'
+  const name = process.env['TAKT_IP_KOPF'] ?? 'cf-connecting-ip'
+  const wert = kopf.get(name)?.trim()
+  return wert && wert.length > 0 ? wert : 'ohne-herkunft'
 }
 
 export async function anmelden(
@@ -53,6 +61,22 @@ export async function anmelden(
   }
 
   zuruecksetzen(ip)
+
+  // Das Cookie ist Secure. Über Klartext-HTTP verwirft der Browser es, und die
+  // Middleware schickt sofort zurück zur Anmeldung — eine stumme Schleife.
+  // Auf localhost gilt HTTP als vertrauenswürdig, dort greift das nicht.
+  const kopf = await headers()
+  const wirt = kopf.get('host') ?? ''
+  const schema = kopf.get('x-forwarded-proto') ?? 'http'
+  const oertlich = wirt.startsWith('localhost') || wirt.startsWith('127.0.0.1')
+  if (schema !== 'https' && !oertlich) {
+    console.error(
+      '[takt] Anmeldung über Klartext-HTTP. Das Sitzungscookie ist Secure und ' +
+        'wird vom Browser verworfen — die Anmeldung läuft im Kreis. Takt ' +
+        'braucht HTTPS; der Tunnel aus Phase 6 liefert es.',
+    )
+  }
+
   const lager = await cookies()
   lager.set(SITZUNG_COOKIE, await sitzungErzeugen(sitzungGeheimnis()), {
     httpOnly: true,

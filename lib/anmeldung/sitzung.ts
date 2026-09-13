@@ -111,11 +111,25 @@ export async function sitzungPruefen(
   return sitzung
 }
 
-export function sitzungGeheimnis(): string {
+export const GEHEIMNIS_MINDESTLAENGE = 32
+
+/**
+ * Gibt das Geheimnis zurück oder `null`. Middleware und Server-Aktion müssen
+ * dieselbe Schranke anlegen — sonst signiert die eine Seite mit einem
+ * Geheimnis, das die andere ablehnt, und jede erfolgreiche Anmeldung endet
+ * in einem Fehler 500.
+ */
+export function sitzungGeheimnisOderNull(): string | null {
   const geheimnis = process.env['TAKT_SITZUNG_SECRET']
-  if (!geheimnis || geheimnis.length < 32) {
+  if (!geheimnis || geheimnis.length < GEHEIMNIS_MINDESTLAENGE) return null
+  return geheimnis
+}
+
+export function sitzungGeheimnis(): string {
+  const geheimnis = sitzungGeheimnisOderNull()
+  if (!geheimnis) {
     throw new Error(
-      'TAKT_SITZUNG_SECRET fehlt oder ist kürzer als 32 Zeichen. Siehe .env.beispiel.',
+      `TAKT_SITZUNG_SECRET fehlt oder ist kürzer als ${GEHEIMNIS_MINDESTLAENGE} Zeichen. Siehe .env.beispiel.`,
     )
   }
   return geheimnis

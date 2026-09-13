@@ -421,3 +421,63 @@ Dazu der Wortlaut der ausgelieferten Seite: die fünf erwarteten deutschen
 Zeichenketten sind da, „Versuch" und „Letzter Abgleich" kommen nicht vor,
 und die Suche nach `Login`, `Password`, `Sign in`, `Submit`, `Error` und
 `Loading` bleibt leer.
+
+### E2.7 — Fünf Befunde aus `/code-review`, alle behoben
+
+Die Prüfung nach Phase 2 fand fünf Fehler, davon drei sicherheitsrelevant.
+Alle behoben, Testzahl von 44 auf 46.
+
+**`X-Forwarded-For` als Schlüssel war wirkungslos — der schwerste Befund.**
+Den Kopf setzt der Aufrufer. Wer bei jeder Anfrage eine andere IP behauptet,
+landet in lauter frischen Töpfen, und die Staffelung 1 s, 2 s, 4 s greift
+nie. Ohne vorgeschaltetes Gerät landeten umgekehrt alle im selben Topf
+`unbekannt`, sodass ein Fremder den Eigentümer ausbremsen konnte.
+
+Zwei Änderungen:
+
+1. Gelesen wird nur ein Kopf, den der eigene Verbund setzt — voreingestellt
+   `CF-Connecting-IP`, über `TAKT_IP_KOPF` anders benennbar. Nicht
+   `X-Forwarded-For`.
+2. **Abweichung vom Auftrag:** zusätzlich zum Zähler je IP gibt es einen
+   Zähler über alles. Der Auftrag nennt nur „Zähler pro IP im Speicher". Der
+   allein trägt aber nicht, solange die Herkunft aus einem Kopf stammt. Der
+   Topf über alles lässt sich nicht umgehen. Preis: wer auf den Dienst
+   einhämmert, bremst auch den Eigentümer — bei einer Obergrenze von 30 s
+   eine Verzögerung, keine Aussperrung. Takt hat genau einen Nutzer, für den
+   beide Töpfe ohnehin fast dasselbe sind. Eine erfolgreiche Anmeldung setzt
+   beide zurück.
+
+Ein Test bildet den Angriff nach: zwölf Fehlversuche unter zwölf
+verschiedenen IPs, danach muss auch eine dreizehnte IP verzögert werden.
+
+**Das Hash-Skript zeigte das Passwort im Klartext.** Der Filter ließ die
+Zeichenkette durch, die den Text der Aufforderung enthielt. Beim Auffrischen
+— jedes Backspace, jede Pfeiltaste — schreibt readline Aufforderung **und**
+Zeile in einem Stück; der Filter ließ genau das durch. Jetzt wird die
+Aufforderung selbst geschrieben und danach gar nichts mehr durchgelassen.
+
+Mit einem Pseudo-Terminal nachgestellt: Passwort tippen, zweimal Backspace,
+Wiederholung. In der gesamten Ausgabe steht das Passwort nicht mehr, nur
+Steuerzeichen für den Mauszeiger. Der Hash entsteht korrekt:
+`$argon2id$v=19$m=19456,t=3,p=1$…`.
+
+**Der Matcher der Middleware ließ zu viel durch.** Die Ausnahme lautete „hat
+einen Punkt im letzten Abschnitt". Damit wäre später jeder Pfad wie
+`/laeufe/2026.01.01` oder `/laeufe/123/ausfuhr.gpx` ohne Anmeldung
+erreichbar gewesen. Die Ausnahmen sind jetzt einzeln benannt. Gegen den
+laufenden Server geprüft: die drei Pfade aus dem Befund liefern 307, die
+vier echten Ausnahmen weiterhin 200.
+
+**Middleware und Server-Aktion legten verschiedene Schranken an.** Die
+Middleware nahm jedes nicht leere `TAKT_SITZUNG_SECRET`, `sitzungGeheimnis()`
+verlangte 32 Zeichen. Ein kurzes Geheimnis wäre in der Middleware
+durchgegangen und hätte jede erfolgreiche Anmeldung mit einem Fehler 500
+beendet. Beide nutzen jetzt `sitzungGeheimnisOderNull()`.
+
+**`Secure` über Klartext-HTTP lief stumm im Kreis.** Der Browser verwirft
+das Cookie, die Middleware schickt zurück zur Anmeldung, und nichts sagt
+warum. `Secure` bleibt — der Auftrag verlangt es, und der Tunnel aus Phase 6
+liefert HTTPS. Statt eines Schlupflochs schreibt die Anmeldung jetzt eine
+deutliche Zeile ins Serverprotokoll, wenn sie über Klartext-HTTP läuft und
+der Wirt nicht `localhost` ist. Auf `localhost` gilt HTTP als
+vertrauenswürdig, dort greift das nicht.

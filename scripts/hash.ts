@@ -11,17 +11,28 @@ import { createInterface } from 'node:readline'
 import { stdin, stdout } from 'node:process'
 
 function frageVerdeckt(frage: string): Promise<string> {
-  return new Promise((fertig) => {
+  return new Promise((fertig, scheitern) => {
+    // Die Eingabeaufforderung selbst schreiben, danach jede Ausgabe von
+    // readline unterdrücken.
+    //
+    // Ein Filter, der nur den Text der Aufforderung durchlässt, reicht nicht:
+    // beim Auffrischen — jedes Backspace, jeder Pfeiltaste — schreibt readline
+    // Aufforderung **und** Zeile in einem Stück. Der Filter ließe das durch
+    // und das Passwort stünde im Klartext auf dem Schirm. Deshalb wird gar
+    // nichts durchgelassen.
+    stdout.write(frage)
+
     const leser = createInterface({ input: stdin, output: stdout, terminal: true })
-    // Ausgabe der Eingabe unterdrücken.
-    const schreiben = (leser as unknown as { _writeToOutput: (s: string) => void })
-      ._writeToOutput
-    ;(leser as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (
-      s: string,
-    ) => {
-      if (s.includes(frage)) schreiben.call(leser, s)
-    }
-    leser.question(frage, (antwort) => {
+    ;(leser as unknown as { _writeToOutput: (s: string) => void })._writeToOutput =
+      () => {}
+
+    leser.on('SIGINT', () => {
+      leser.close()
+      stdout.write('\n')
+      scheitern(new Error('Abgebrochen.'))
+    })
+
+    leser.question('', (antwort) => {
       leser.close()
       stdout.write('\n')
       fertig(antwort)

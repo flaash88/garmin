@@ -32,11 +32,33 @@ describe('verzug', () => {
     expect(verzug(IP, T)).toBe(30_000)
   })
 
-  it('haelt die Zaehler je IP getrennt', () => {
+  it('zaehlt je IP weiter, aber der Topf ueber alles setzt den Boden', () => {
     const andere = '198.51.100.7'
     for (let i = 0; i < 5; i += 1) fehlversuchNotieren(IP, T)
-    expect(verzug(IP, T)).toBeGreaterThan(0)
-    expect(verzug(andere, T)).toBe(0)
+
+    // Die fremde IP hat selbst nichts verbockt, wird aber nicht auf null
+    // gesetzt — sonst genuegte ein Wechsel der behaupteten Herkunft.
+    expect(verzug(andere, T)).toBe(verzug(IP, T))
+
+    // Der eigene Zaehler laeuft trotzdem mit: weitere Fehlversuche nur von
+    // der einen IP treiben den Verzug weiter hoch.
+    const vorher = verzug(IP, T)
+    fehlversuchNotieren(IP, T)
+    expect(verzug(IP, T)).toBeGreaterThan(vorher)
+  })
+
+  it('laesst sich nicht durch staendig neue Herkunft umgehen', () => {
+    // Der Angriff, den der Zaehler je IP allein nicht abfaengt: bei jeder
+    // Anfrage eine andere IP behaupten. Frueher blieb der Verzug dabei bei
+    // null, weil jeder Versuch in einem frischen Topf landete.
+    for (let i = 0; i < 12; i += 1) fehlversuchNotieren(`203.0.113.${i}`, T)
+    expect(verzug('203.0.113.99', T)).toBeGreaterThan(0)
+    expect(verzug('ohne-herkunft', T)).toBeGreaterThan(0)
+  })
+
+  it('vergisst auch den Topf ueber alles nach der Ruhezeit', () => {
+    for (let i = 0; i < 12; i += 1) fehlversuchNotieren(`203.0.113.${i}`, T)
+    expect(verzug('203.0.113.99', T + 15 * 60 * 1000 + 1)).toBe(0)
   })
 
   it('vergisst nach einer Viertelstunde Ruhe', () => {
@@ -52,9 +74,12 @@ describe('verzug', () => {
     expect(verzug(IP, spaeter)).toBe(0)
   })
 
-  it('setzt nach erfolgreicher Anmeldung zurueck', () => {
+  it('setzt nach erfolgreicher Anmeldung beide Zaehler zurueck', () => {
     for (let i = 0; i < 5; i += 1) fehlversuchNotieren(IP, T)
     zuruecksetzen(IP)
     expect(verzug(IP, T)).toBe(0)
+    // Auch der Topf ueber alles, sonst bliebe der Eigentümer nach der
+    // eigenen erfolgreichen Anmeldung weiter gebremst.
+    expect(verzug('198.51.100.7', T)).toBe(0)
   })
 })
