@@ -5,6 +5,12 @@ import {
   type CanUseTool,
 } from '@anthropic-ai/claude-agent-sdk'
 import { athletenprofil } from './profil'
+import {
+  PLAN_FORM,
+  PLAN_WERKZEUG_NAME,
+  werkzeugPlanVorschlagen,
+  type Planauftrag,
+} from './planwerkzeug'
 import { istZugangsfehler, startmeldung, TOKEN_VARIABLE, zugangPruefen } from './zugang'
 import { binaerdateiStartmeldung, binaerdateiSuchen } from './binaerdatei'
 import {
@@ -79,6 +85,19 @@ export const ERLAUBTE_WERKZEUGE = [
 ].map((n) => `mcp__${SERVER_NAME}__${n}`)
 
 /**
+ * Das Planungswerkzeug steht **nicht** in der Liste oben.
+ *
+ * Es kommt nur dazu, wenn ein Plansatz ausdrücklich bestellt wurde. Im freien
+ * Gespräch ist es abgewiesen wie jedes fremde Werkzeug — sonst könnte eine
+ * beiläufige Frage einen Plansatz erzeugen, den niemand bestellt hat.
+ */
+export const PLAN_WERKZEUG = `mcp__${SERVER_NAME}__${PLAN_WERKZEUG_NAME}`
+
+export function erlaubteWerkzeuge(planung: boolean): string[] {
+  return planung ? [...ERLAUBTE_WERKZEUGE, PLAN_WERKZEUG] : ERLAUBTE_WERKZEUGE
+}
+
+/**
  * Meldung an den Coach. Beschriftung und Detail gehen zusätzlich über den
  * Rückruf an den Antwortstrom — von dort, nicht aus einer Zuordnungstabelle.
  */
@@ -94,7 +113,11 @@ function alsMcpAntwort(antwort: WerkzeugAntwort) {
   }
 }
 
-export function mcpServerBauen(melden: (m: WerkzeugMeldung) => void) {
+export function mcpServerBauen(
+  melden: (m: WerkzeugMeldung) => void,
+  /** Nur gesetzt, wenn ein Plansatz bestellt wurde. */
+  planauftrag?: Planauftrag,
+) {
   /** Führt ein Werkzeug aus und meldet Beschriftung und Detail des echten Aufrufs. */
   async function fuehren(
     name: string,
@@ -155,6 +178,24 @@ export function mcpServerBauen(melden: (m: WerkzeugMeldung) => void) {
         FORMEN.sql_abfrage,
         async ({ sql }) => fuehren('sql_abfrage', () => werkzeugSql(sql)),
       ),
+      ...(planauftrag
+        ? [
+            tool(
+              PLAN_WERKZEUG_NAME,
+              'Einheiten für den bestellten Trainingsblock vorschlagen. ' +
+                'Schreibt nur in Takt, nie nach intervals.icu — die Freigabe ' +
+                'gibt der Athlet selbst.',
+              PLAN_FORM,
+              async ({ einheiten, begruendung }) =>
+                fuehren(PLAN_WERKZEUG_NAME, () =>
+                  werkzeugPlanVorschlagen(planauftrag, {
+                    einheiten,
+                    ...(begruendung === undefined ? {} : { begruendung }),
+                  }),
+                ),
+            ),
+          ]
+        : []),
     ],
   })
 }
@@ -175,7 +216,13 @@ export function mcpServerBauen(melden: (m: WerkzeugMeldung) => void) {
  */
 export function nurEigeneWerkzeuge(
   protokoll?: (name: string, erlaubt: boolean) => void,
+  /**
+   * Ob das Planungswerkzeug dazugehört. Vorgabe: nein — im freien Gespräch
+   * bleibt es abgewiesen.
+   */
+  planung = false,
 ): CanUseTool {
+  const erlaubte = erlaubteWerkzeuge(planung)
   /*
    * Was hier entschieden wird und was nicht — damit klar ist, was an dieser
    * Schranke hängt:
@@ -191,7 +238,7 @@ export function nurEigeneWerkzeuge(
    *                 berührt.
    */
   return async (name, eingabe) => {
-    const erlaubt = ERLAUBTE_WERKZEUGE.includes(name)
+    const erlaubt = erlaubte.includes(name)
     protokoll?.(name, erlaubt)
 
     if (erlaubt) return { behavior: 'allow', updatedInput: eingabe }
@@ -201,7 +248,7 @@ export function nurEigeneWerkzeuge(
       message:
         `Das Werkzeug ${name} steht dem Coach nicht zur Verfügung. Erlaubt ` +
         `sind ausschließlich die Werkzeuge von Takt: ` +
-        ERLAUBTE_WERKZEUGE.join(', ') +
+        erlaubte.join(', ') +
         '. Kein Zugriff auf Dateien, Shell oder Netz.',
     }
   }
@@ -254,8 +301,12 @@ export interface CoachEreignis {
   /**
    * `zugang` ist ein eigener Zustand, kein allgemeiner Fehler: ein
    * abgelaufener Token braucht eine andere Handlung als ein Netzausfall.
+   *
+   * `vorschlag` nennt die Kennung eines soeben angelegten Plansatzes. Sie
+   * kommt, bevor der Coach losläuft — bricht der Strom ab, findet die
+   * Oberfläche den Satz trotzdem wieder.
    */
-  art: 'text' | 'werkzeug' | 'ende' | 'fehler' | 'zugang'
+  art: 'text' | 'werkzeug' | 'ende' | 'fehler' | 'zugang' | 'vorschlag'
   text?: string
   id?: string
   beschriftung?: string
@@ -286,6 +337,11 @@ export async function* coachFragen(
    * gefragt wurde — genau der blinde Fleck, den die Verschattung erzeugt hat.
    */
   entscheidungMelden?: (e: Werkzeugentscheidung) => void,
+  /**
+   * Nur gesetzt, wenn ein Trainingsblock bestellt wurde. Dann — und nur dann
+   * — kommt das Planungswerkzeug dazu.
+   */
+  planauftrag?: Planauftrag,
 ): AsyncGenerator<CoachEreignis> {
   const zugang = zugangPruefen()
   if (zugang.art !== 'da') {
@@ -311,7 +367,7 @@ export async function* coachFragen(
   }
 
   const meldungen: WerkzeugMeldung[] = []
-  const server = mcpServerBauen((m) => meldungen.push(m))
+  const server = mcpServerBauen((m) => meldungen.push(m), planauftrag)
   const profil = await athletenprofil()
 
   const vorgeschichte = verlauf
@@ -359,9 +415,12 @@ export async function* coachFragen(
         // Zusätzlich namentlich, falls `tools` je anders ausgelegt wird.
         disallowedTools: VERBOTENE_WERKZEUGE,
         // Der eigentliche Riegel. Siehe nurEigeneWerkzeuge.
-        canUseTool: nurEigeneWerkzeuge((name, erlaubt) => {
-          entscheidungMelden?.({ name, erlaubt })
-        }),
+        canUseTool: nurEigeneWerkzeuge(
+          (name, erlaubt) => {
+            entscheidungMelden?.({ name, erlaubt })
+          },
+          planauftrag !== undefined,
+        ),
         permissionMode: 'default',
         /*
          * permissionPrompts bleibt auf der Vorgabe 'host'. Die Einstellung
@@ -372,7 +431,8 @@ export async function* coachFragen(
         settingSources: [],
         // Nichts aus der Umgebung ererben. Siehe saubereUmgebung.
         env: saubereUmgebung(),
-        maxTurns: 12,
+        // Ein Block über 16 Wochen braucht mehr Züge als eine Antwort im Chat.
+        maxTurns: planauftrag ? 30 : 12,
       },
     })
 

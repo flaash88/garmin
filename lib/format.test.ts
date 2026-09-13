@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { datum, datumZeit, dauer, mitVorzeichen, pace, strecke, uhrzeit, zahl } from './format'
+import { datum, datumZeit, dauer, mitVorzeichen, pace, strecke, uhrzeit, wann, zahl } from './format'
 
 describe('zahl', () => {
   it('nutzt das Dezimalkomma', () => {
@@ -119,5 +119,33 @@ describe('mitVorzeichen', () => {
   it('laesst die Null ohne Vorzeichen', () => {
     expect(mitVorzeichen(0)).toBe('0,0')
     expect(mitVorzeichen(-0.04)).toBe('0,0')
+  })
+})
+
+describe('wann', () => {
+  const jetzt = new Date(2026, 8, 13, 19, 14)
+
+  it('schreibt den heutigen Tag aus', () => {
+    expect(wann(new Date(2026, 8, 13, 8, 3), jetzt)).toBe('heute, 08:03')
+  })
+
+  it('schreibt den gestrigen Tag aus', () => {
+    expect(wann(new Date(2026, 8, 12, 23, 59), jetzt)).toBe('gestern, 23:59')
+  })
+
+  it('nimmt fuer aeltere Tage das Datum', () => {
+    expect(wann(new Date(2026, 8, 11, 9, 0), jetzt)).toBe('11.09.2026')
+  })
+
+  it('zaehlt Kalendertage, nicht 24-Stunden-Schritte', () => {
+    // Zwei Minuten alt, aber schon gestern: um Mitternacht darf aus «heute»
+    // nicht «vor 0 Tagen» werden.
+    expect(wann(new Date(2026, 8, 12, 23, 59), new Date(2026, 8, 13, 0, 1))).toBe(
+      'gestern, 23:59',
+    )
+  })
+
+  it('faellt bei Unsinn auf den Strich zurueck', () => {
+    expect(wann('kein Datum', jetzt)).toBe('–')
   })
 })

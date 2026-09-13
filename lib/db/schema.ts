@@ -175,3 +175,133 @@ export const analysen = pgTable(
   },
   (t) => [index('analysen_art_bezug_idx').on(t.art, t.bezug)],
 )
+
+/**
+ * Einstellungen als Schlüssel-Wert-Paare.
+ *
+ * Ein Nutzer, eine Handvoll Werte — eine Tabelle mit einer Spalte je
+ * Einstellung müsste bei jeder neuen Einstellung wandern.
+ */
+export const einstellungen = pgTable('einstellungen', {
+  schluessel: varchar('schluessel', { length: 64 }).primaryKey(),
+  wert: text('wert').notNull(),
+  geaendertAm: timestamp('geaendert_am', { withTimezone: true }).notNull().defaultNow(),
+})
+
+/**
+ * Gesprächsfäden mit dem Coach.
+ *
+ * Der Verlauf lag bisher nur im Browser und überlebte kein Neuladen. Er
+ * gehört in die Datenbank — auch damit er einen Neubau des Behälters
+ * übersteht. Siehe DECISIONS.md, E11.1.
+ */
+export const unterhaltungen = pgTable(
+  'unterhaltungen',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    /** Aus der ersten Frage gebildet, gekürzt. */
+    titel: text('titel').notNull(),
+    begonnenAm: timestamp('begonnen_am', { withTimezone: true }).notNull().defaultNow(),
+    zuletztAm: timestamp('zuletzt_am', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('unterhaltungen_zuletzt_idx').on(t.zuletztAm)],
+)
+
+export const nachrichten = pgTable(
+  'nachrichten',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    unterhaltungId: varchar('unterhaltung_id', { length: 64 })
+      .notNull()
+      .references(() => unterhaltungen.id, { onDelete: 'cascade' }),
+    /** `du` oder `coach`. */
+    rolle: varchar('rolle', { length: 8 }).notNull(),
+    text: text('text').notNull(),
+    /** Die Werkzeugzeilen, damit der Faden beim Wiederöffnen aussieht wie zuvor. */
+    werkzeuge: jsonb('werkzeuge').notNull().default([]),
+    /** Abgelaufener Zugang — eigener Zustand, kein gewöhnlicher Fehler. */
+    zugang: text('zugang'),
+    fehler: text('fehler'),
+    reihenfolge: integer('reihenfolge').notNull(),
+    erstelltAm: timestamp('erstellt_am', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('nachrichten_faden_idx').on(t.unterhaltungId, t.reihenfolge)],
+)
+
+/** Ein Satz Vorschläge, den der Coach auf eine Anfrage hin erzeugt hat. */
+export const planvorschlaege = pgTable(
+  'planvorschlaege',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    /** Das Ziel, das der Anfrage zugrunde lag — im Wortlaut. */
+    ziel: text('ziel'),
+    vonTag: date('von_tag').notNull(),
+    bisTag: date('bis_tag').notNull(),
+    wochen: integer('wochen').notNull(),
+    /** Begründung des Coach für den Aufbau, einmal je Satz. */
+    begruendung: text('begruendung'),
+    erstelltAm: timestamp('erstellt_am', { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * Gesetzt, sobald der Satz verworfen wurde. Sichtbar bleibt er danach
+     * sieben Tage — eingeklappt, nicht im Wochenraster —, dann räumt
+     * `verworfeneAufraeumen` ihn weg.
+     */
+    verworfenAm: timestamp('verworfen_am', { withTimezone: true }),
+  },
+  (t) => [
+    index('planvorschlaege_erstellt_idx').on(t.erstelltAm),
+    index('planvorschlaege_verworfen_idx').on(t.verworfenAm),
+  ],
+)
+
+/**
+ * Zustände einer vorgeschlagenen Einheit.
+ *
+ *   vorschlag     erzeugt, nichts ist verbindlich
+ *   uebertragen   als Event in intervals.icu, geht auf die Uhr
+ *   freigegeben   freigegeben, aber die Übertragung ist gescheitert —
+ *                 der Grund steht in `fehler`, Wiederholen ist möglich
+ *   verworfen     abgelehnt; bleibt sieben Tage sichtbar, dann weg
+ *
+ * Es gibt **keinen** stillen Nachlauf von freigegeben nach übertragen: die
+ * Freigabe überträgt sofort, und was dabei schiefgeht, ist zu sehen.
+ */
+export const planeinheiten = pgTable(
+  'planeinheiten',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    vorschlagId: varchar('vorschlag_id', { length: 64 })
+      .notNull()
+      .references(() => planvorschlaege.id, { onDelete: 'cascade' }),
+    tag: date('tag').notNull(),
+    name: text('name').notNull(),
+    typ: varchar('typ', { length: 32 }).notNull().default('Run'),
+    beschreibung: text('beschreibung'),
+    dauerSekunden: integer('dauer_sekunden'),
+    streckeMeter: doublePrecision('strecke_meter'),
+    zielBelastung: integer('ziel_belastung'),
+    /** Kennung einer bestehenden Einheit, die ersetzt werden soll. */
+    ersetztPlanId: varchar('ersetzt_plan_id', { length: 64 }),
+    /**
+     * Gesetzt, sobald die alte Einheit in intervals.icu gelöscht ist.
+     *
+     * Ohne diese Marke würde ein zweiter Versuch nach einem gescheiterten
+     * Anlegen noch einmal löschen wollen — der Eintrag ist dann aber schon
+     * weg, das Löschen endet mit 404, und die neue Einheit käme nie zustande.
+     * Die alte wäre verloren.
+     */
+    ersetztGeloeschtAm: timestamp('ersetzt_geloescht_am', { withTimezone: true }),
+    zustand: varchar('zustand', { length: 16 }).notNull().default('vorschlag'),
+    /** Kennung des Events in intervals.icu, sobald übertragen. */
+    icuEventId: varchar('icu_event_id', { length: 64 }),
+    fehler: text('fehler'),
+    verworfenAm: timestamp('verworfen_am', { withTimezone: true }),
+    uebertragenAm: timestamp('uebertragen_am', { withTimezone: true }),
+    reihenfolge: integer('reihenfolge').notNull().default(0),
+  },
+  (t) => [
+    index('planeinheiten_vorschlag_idx').on(t.vorschlagId, t.reihenfolge),
+    index('planeinheiten_tag_idx').on(t.tag),
+    index('planeinheiten_zustand_idx').on(t.zustand),
+  ],
+)

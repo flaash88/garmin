@@ -132,3 +132,20 @@ export async function zonenHolen(zugang: IcuZugang): Promise<Rohsatz[]> {
   )
   return Array.isArray(antwort) ? (antwort as Rohsatz[]) : []
 }
+
+/**
+ * Einen Plan-Eintrag löschen.
+ *
+ * Wird nur aufgerufen, wenn eine vorgeschlagene Einheit ausdrücklich eine
+ * bestehende ersetzen soll — und dafür braucht es in der Oberfläche eine
+ * eigene Bestätigung. Ein Fehlschlag hier bricht die Übertragung ab, statt
+ * die neue Einheit zusätzlich zur alten anzulegen.
+ */
+export async function planLoeschen(
+  zugang: IcuZugang,
+  eventId: string,
+): Promise<void> {
+  await icuHolen<unknown>(zugang, `/athlete/${zugang.athletId}/events/${eventId}`, {
+    methode: 'DELETE',
+  })
+}

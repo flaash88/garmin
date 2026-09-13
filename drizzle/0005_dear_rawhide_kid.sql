@@ -1,0 +1,1 @@
+ALTER TABLE "planeinheiten" ADD COLUMN "ersetzt_geloescht_am" timestamp with time zone;

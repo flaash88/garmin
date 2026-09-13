@@ -53,8 +53,8 @@ function kopfzeilen(zugang: IcuZugang): Headers {
 /**
  * Drei Versuche, dazwischen 1 s und 4 s Pause. Nur für GET.
  *
- * Ein POST oder PUT wird **nicht** wiederholt: bricht die Verbindung nach dem
- * Anlegen eines Plan-Eintrags ab, stünde die Einheit sonst zweimal im
+ * Ein POST, PUT oder DELETE wird **nicht** wiederholt: bricht die Verbindung
+ * nach dem Anlegen eines Plan-Eintrags ab, stünde die Einheit sonst zweimal im
  * Kalender. Lieber ein gemeldeter Fehlschlag als ein stiller Doppeleintrag.
  */
 const WIEDERHOLUNGEN = 3
@@ -73,7 +73,7 @@ interface HolenOptionen {
   cols?: readonly string[]
   fields?: readonly string[]
   suchwerte?: Record<string, string | number | undefined>
-  methode?: 'GET' | 'POST' | 'PUT'
+  methode?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   koerper?: unknown
 }
 
@@ -120,12 +120,28 @@ export async function icuHolen<T>(
       continue
     }
 
-    if (antwort.ok) return (await antwort.json()) as T
+    if (antwort.ok) {
+      /*
+       * DELETE antwortet mit 204 und leerem Körper. `json()` würde daran
+       * scheitern und einen erfolgreichen Löschvorgang als Fehler melden.
+       */
+      const text = await antwort.text()
+      if (text.trim().length === 0) return null as T
+      try {
+        return JSON.parse(text) as T
+      } catch {
+        throw new IcuFehler(
+          'intervals.icu antwortete mit unlesbarem Inhalt.',
+          antwort.status,
+          pfad,
+        )
+      }
+    }
 
     // Der Schlüssel darf nie in eine Meldung geraten.
-    const text = (await antwort.text().catch(() => '')).slice(0, 400)
+    const meldung = (await antwort.text().catch(() => '')).slice(0, 400)
     letzterFehler = new IcuFehler(
-      `intervals.icu antwortete ${antwort.status}${text ? `: ${text}` : ''}`,
+      `intervals.icu antwortete ${antwort.status}${meldung ? `: ${meldung}` : ''}`,
       antwort.status,
       pfad,
     )

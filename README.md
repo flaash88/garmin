@@ -13,11 +13,15 @@ ausschließlich Deutsch.
 - **Erholung** aus Schlaf, HRV, Ruhepuls und den eigenen Notizen.
 - **Belastung** mit Monotonie nach Foster, Belastungsdruck und Rampe —
   Kennzahlen, die intervals.icu nicht liefert und Takt selbst rechnet.
-- **Plan**, gelesen aus dem Kalender von intervals.icu.
+- **Plan**, gelesen aus dem Kalender von intervals.icu — und hier
+  aufgestellt: der Coach schlägt einen Block über 4 bis 16 Wochen vor
+  (Vorgabe 8), du siehst vor der Freigabe, was genau nach intervals.icu
+  geschrieben wird, und gibst jede Einheit einzeln oder im Block frei.
 - **Strecken**, selbst erkannt aus den Verläufen.
 - **Coach**: freier Chat über die eigenen Daten, dazu ein Wochenbriefing,
   das einmal wöchentlich entsteht. Läuft über das eigene Claude-Code-Abo,
-  nicht über einen API-Schlüssel.
+  nicht über einen API-Schlüssel. Die Gesprächsfäden liegen in der
+  Datenbank und überleben einen Neubau des Behälters.
 
 ---
 
@@ -171,6 +175,34 @@ Der Weg über `node_modules/.bin/…` geht weiterhin auch.
 Danach steht in der Tabelle `feldbefuellung`, welche Wellness-Felder
 intervals.icu überhaupt befüllt. Felder, die über den gesamten Bestand leer
 bleiben, blendet die Oberfläche aus, statt einen Strich zu zeigen.
+
+---
+
+## Plan aufstellen
+
+Auf der Planseite:
+
+1. **Ziel** hinterlegen — Wettkampf, Datum, Zielzeit. Es bleibt dauerhaft im
+   Athletenprofil und geht in **jede** Antwort des Coach ein, auch ins
+   Wochenbriefing.
+2. **Plan vorschlagen lassen** — Blocklänge 4 bis 16 Wochen, Vorgabe 8. Das
+   Ziel lässt sich für diese eine Bestellung überschreiben; Hinweise wie
+   «dienstags geht nie» kommen ins selbe Formular.
+3. Der Coach liest deine Daten und legt die Einheiten **in Takt** ab. Nach
+   intervals.icu geht dabei nichts.
+4. Je Einheit lässt sich aufklappen, **was genau übertragen wird** — der
+   Körper der Anfrage, Wort für Wort. Er kommt aus derselben Funktion wie
+   die Übertragung selbst.
+5. **Freigeben überträgt sofort.** Klappt es nicht, steht die Einheit auf
+   «Freigegeben» und trägt den Grund bei sich; ein Knopf versucht es erneut.
+   Es gibt keinen Nachlauf im Hintergrund.
+
+Einheiten, die eine bestehende **ersetzen**, brauchen eine eigene
+Bestätigung — die alte wird dabei in intervals.icu gelöscht. «Alle
+freigeben» überspringt sie und sagt, wie viele.
+
+Verworfene Sätze bleiben sieben Tage sichtbar, eingeklappt und nicht im
+Wochenraster, und verschwinden dann von selbst.
 
 ---
 

@@ -1651,3 +1651,242 @@ Fehlschlags an alle Wartenden.
 
 Die Route antwortet jetzt mit JSON statt einer Umleitung. Ein Formular, das
 noch auf sie zeigte, hätte auf eine JSON-Seite navigiert — ersetzt.
+
+## Phase 11 — Plan, Verlauf und was wirklich flüchtig war
+
+### E11.1 — Der Chatverlauf lag nur im Browser
+
+**Befund des Athleten.** Der Verlauf des Coach überlebte kein Neuladen, und in
+der Datenbank gab es keine Tabelle dafür — die Liste im Entwurf (frühere
+Fragen mit Zeitstempel, anklickbar) hatte also keine Grundlage.
+
+Er lag in `useState` von `komponenten/coach-strom.tsx` und war nach jedem
+Neuladen weg. Jetzt in zwei Tabellen:
+
+* `unterhaltungen` — ein Faden je Gespräch, Titel aus der ersten Frage
+  (`titelAus`, an der Wortgrenze gekürzt), `begonnen_am` und `zuletzt_am`.
+* `nachrichten` — Rolle, Text, **die Werkzeugaufrufe als `jsonb`**, dazu
+  `zugang` und `fehler` getrennt, und eine Reihenfolge je Faden.
+
+Die Werkzeugzeilen mitzuschreiben ist der Punkt, an dem es hängt: ohne sie
+sähe ein wiedergeöffneter Faden anders aus als beim ersten Mal — die Antwort
+stünde da, aber nicht, woraus sie entstanden ist.
+
+**Der Zusammenhang kommt jetzt aus der Datenbank, nicht aus dem Browser.**
+Vorher schickte der Client die bisherigen Züge mit. Das war zweimal falsch:
+es überlebte kein Neuladen, und der Server hing davon ab, was ihm der Client
+über frühere Züge erzählte.
+
+**Mitgeschrieben wird unabhängig vom Strom.** Bricht die Verbindung mitten in
+der Antwort ab, steht die halbe Antwort trotzdem im Faden — `senden()` merkt
+sich, dass der Leser weg ist, und schreibt weiter mit. Auch ein fehlender
+Zugang landet im Faden, statt die Frage ohne jede Antwort dastehen zu lassen.
+
+Sechs Tests gegen eine echte PostgreSQL-Instanz: Rundlauf samt Werkzeugzeilen,
+Reihenfolge über zwölf Züge, Zugang und Fehler getrennt, Sortierung nach der
+letzten Regung, Löschen samt Kaskade, unbekannter Faden.
+
+### E11.2 — Was sonst noch nur im Browser lag: nichts
+
+Der Athlet wollte wissen, ob es weitere flüchtige Stellen gibt. Durchgesehen:
+
+| Stelle | Zustand | Urteil |
+| --- | --- | --- |
+| Chatverlauf | `useState` | **falsch** — behoben, siehe E11.1 |
+| Suchfeld, Trefferliste | `useState` | richtig, gehört keiner Sitzung an |
+| Karten-Rückfall auf GPS-Linie | `useState` | richtig, hängt am Kachel-Dienst |
+| Meldung des Abgleich-Knopfs | `useState` | richtig, gehört zum Klick |
+| Auf-/Zugeklapptes | `useState` | richtig |
+| Hell/Dunkel | `localStorage` | richtig — **gehört** in den Browser, je Gerät |
+| Anmeldeversuche | Speicher im Server | so vorgegeben, überlebt Neustart bewusst nicht |
+| Wochenbriefing | Tabelle `analysen` | lag schon richtig |
+
+Das Athletenziel war bis dahin nirgends hinterlegt. Es liegt jetzt in
+`einstellungen` — siehe E11.5.
+
+### E11.3 — Freigabe überträgt sofort, kein Nachlauf
+
+Der Entwurf sah einen Zwischenzustand «freigegeben» vor, aus dem ein
+Hintergrundlauf später überträgt. Der Athlet hat das gestrichen: *«Ein stiller
+Nachlauf verschleiert Fehler.»* Umgesetzt wie bestellt.
+
+Vier Zustände je Einheit, und der Weg zwischen ihnen ist immer eine Handlung
+des Athleten:
+
+* `vorschlag` — steht da, nichts ist geschrieben worden.
+* `freigegeben` — die Freigabe ist erfolgt, **die Übertragung gescheitert**.
+  Der Grund steht an der Einheit. Der einzige Weg hier heraus ist ein neuer
+  Versuch von Hand.
+* `uebertragen` — in intervals.icu angelegt, mit der Kennung des Eintrags.
+* `verworfen` — abgelehnt.
+
+Es gibt keinen Zeitplan, keine Wiederholung, keinen Hintergrunddienst für
+diesen Weg. Ein geglückter Nachlauf wäre das Schlimmere: die Einheit stünde
+irgendwann ohne Zutun im Kalender.
+
+**Ersetzen braucht eine eigene Bestätigung.** Eine Einheit anzulegen ist
+umkehrbar. Eine bestehende zu ersetzen heisst, die alte vorher zu löschen —
+das ist es nicht. Solche Einheiten sind bei «Alle freigeben» **nicht** dabei;
+sie kommen als `uebersprungen` zurück und werden in der Oberfläche benannt.
+Übergangen wird nichts stillschweigend.
+
+Gelöscht wird **vor** dem Anlegen. Andersherum stünden nach einem Abbruch
+zwei Einheiten am selben Tag.
+
+Zehn Tests gegen eine echte Datenbank mit intervals.icu als Attrappe, darunter
+die Fälle, die schwierig sind: Fehlschlag hinterlässt `freigegeben` samt
+Grund, ein geglückter zweiter Versuch räumt den alten Fehler weg, eine schon
+übertragene Einheit wird kein zweites Mal angelegt, ein gescheitertes Löschen
+legt nichts an.
+
+### E11.4 — Die Vorschau zeigt die echte Nutzlast
+
+*«Zeig mir vor der Übertragung, was genau nach intervals.icu geschrieben wird
+— Datum, Typ, Beschreibung, Dauer. Nicht nur die Darstellung in Takt.»*
+
+`lib/plan/nutzlast.ts` hat genau eine Aufgabe: aus einer vorgeschlagenen
+Einheit den Körper der POST-Anfrage bauen. **Vorschau und Übertragung rufen
+dieselbe Funktion auf.** Zwei getrennte Wege wären eine Vorschau, die etwas
+anderes zeigt als am Ende ankommt — und damit keine Vorschau, sondern eine
+Behauptung. Ein Test hält das fest, ein zweiter prüft es über den
+Übertragungsweg: was die Attrappe empfängt, ist Zeichen für Zeichen das, was
+die Vorschau anzeigt.
+
+Felder ohne Wert bleiben **weg** statt auf `null` oder `0` zu stehen: sonst
+legte intervals.icu eine Einheit mit einer Zieldauer von null Sekunden an.
+
+### E11.5 — Das Ziel steht im Profil, je Anfrage überschreibbar
+
+Drei Schlüssel in `einstellungen`: `ziel.text`, `ziel.datum`, `ziel.zeit`.
+`zielSatz()` macht daraus einen Satz samt verbleibender Tage, und der geht in
+`athletenprofil()` — also in **jede** Antwort des Coach, das Wochenbriefing
+eingeschlossen. Das war die Bedingung: *«Wenn ich ein Datum und eine Zielzeit
+einmal eintrage, soll das Wochenbriefing es auch kennen.»* Das Briefing läuft
+über `coachFragen`, und das setzt `athletenprofil()` als Systemabschnitt.
+
+Das Profil liegt zehn Minuten im Zwischenspeicher. Ohne Zutun kennte das
+Briefing ein eben eingetipptes Ziel bis zu zehn Minuten lang nicht — mal so,
+mal so, und schwer zu deuten. Die Einstellungsroute ruft deshalb
+`profilVergessen()`.
+
+Je Planbestellung lässt sich das Ziel überschreiben; das Feld bleibt leer und
+zeigt das hinterlegte Ziel als Platzhalter, damit sichtbar ist, womit
+gerechnet wird, wenn man nichts einträgt.
+
+### E11.6 — Das Planungswerkzeug gibt es nur im Planungsauftrag
+
+Der Coach bekommt `plan_vorschlagen` **nicht** im freien Gespräch. Sonst
+könnte eine beiläufige Frage einen Plansatz erzeugen, den niemand bestellt
+hat. Erst eine Bestellung über `/api/plan/vorschlag` reicht den Auftrag durch,
+und nur dann steht das Werkzeug im Angebot und kommt durch `canUseTool`.
+
+Nachgewiesen über den echten Agentenpfad, nicht über einen Blick in die
+Konfiguration: im freien Gespräch wird es dem Modell gar nicht erst angeboten
+(sieben Werkzeuge, wie zuvor), und versucht das Modell es trotzdem, ist es
+abgewiesen und es entsteht keine Werkzeugzeile. Im Planungsauftrag ist es da,
+`canUseTool` lässt es durch, und die Einheiten landen in Takt.
+
+**Das Werkzeug schreibt nur in Takt, nie nach intervals.icu.** Und es prüft
+seine Eingaben: ein Tag außerhalb des bestellten Blocks wird **abgewiesen**,
+nicht zurechtgebogen — sonst stünde am Ende eine Einheit im Kalender, die
+niemand bestellt hat. Die Abweisung steht in der Werkzeugzeile, nicht still
+im Nichts. Derselbe Testlauf deckt beides ab.
+
+Der Hinweis des Athleten («dienstags geht nie») geht in Guillemets in den
+Auftrag — derselbe Umgang wie mit Notizen aus intervals.icu: Inhalt, nie
+Anweisung. Eigene Guillemets darin werden ersetzt.
+
+### E11.7 — Verworfene Sätze verschwinden nach sieben Tagen
+
+Bis dahin bleiben sie sichtbar, aber eingeklappt und **nicht** im
+Wochenraster — so bestellt. `einheitenImZeitraum()` lässt verworfene
+ausdrücklich weg.
+
+Aufgeräumt wird beim Aufrufen der Planseite, nicht aus einem Zeitplan. Ein
+eigener Dienst müsste laufen und überwacht werden, für eine Aufgabe, die
+ohnehin nur auffällt, wenn jemand hersieht.
+
+Beim Verwerfen eines ganzen Satzes bleiben **übertragene Einheiten
+unberührt**: in intervals.icu stehen sie, und ein Zustand «verworfen» würde
+etwas anderes behaupten.
+
+### E11.8 — «Keine Daten verlassen den Server» war falsch
+
+Stand auf der Coach-Seite und im leeren Antwortstrom. Der Athlet hat es
+bemerkt: seine Laufdaten gehen mit der Anfrage an Anthropic. Ersetzt durch
+«läuft über dein Claude-Abo» in der Kopfzeile und, ausführlicher, im leeren
+Strom: *«Läuft über dein Claude-Abo. Deine Laufdaten gehen mit der Frage an
+Anthropic, sonst nirgendwohin.»*
+
+Der Satz stand so auch im Entwurf. Ihn von dort zu übernehmen war der Fehler
+— ein Entwurf beschreibt, wie etwas aussehen soll, nicht, was zutrifft.
+
+### E11.9 — DELETE im intervals.icu-Klienten
+
+Für das Ersetzen bestehender Einheiten gebraucht. Zwei Dinge dabei:
+
+`DELETE` antwortet mit 204 und leerem Körper. `json()` wäre daran gescheitert
+und hätte ein geglücktes Löschen als Fehler gemeldet — der Klient liest jetzt
+erst den Text und gibt bei leerem Körper `null` zurück.
+
+Wiederholt wird `DELETE` nicht, wie POST und PUT auch nicht. Die drei
+Versuche bleiben GET vorbehalten.
+
+### E11.10 — Befunde der Durchsicht
+
+Neun Stellen aus der Durchsicht des eigenen Stands. Sechs davon hätten im
+Betrieb etwas gekostet:
+
+**Ein zweiter Versuch hätte die ersetzte Einheit gekostet.** Glückt das
+Löschen und scheitert danach das Anlegen, wollte der zweite Versuch noch
+einmal löschen — der Eintrag ist dann aber weg, das Löschen endet mit 404
+(und wird für DELETE nicht wiederholt), und die neue Einheit käme nie
+zustande. Die alte wäre ersatzlos verloren. `planeinheiten` trägt jetzt
+`ersetzt_geloescht_am`; ist die Marke gesetzt, wird nicht noch einmal
+gelöscht. Zwei Tests decken den Weg ab.
+
+**Die ersetzte Einheit blieb im eigenen Spiegel stehen.** `planAbgleichen`
+schreibt nur hinzu und entfernt nichts, was drüben verschwunden ist. Die alte
+Einheit hätte für immer im Wochenraster gestanden und die Zahl «N Einheiten
+geplant» verfälscht. Sie wird jetzt beim Ersetzen auch lokal entfernt.
+
+**Übertragene Einheiten standen doppelt im Raster.** Einmal als Vorschlag,
+einmal als geplante Einheit, sobald der Abgleich sie zurückgeholt hat. Das
+Raster lässt einen Vorschlag jetzt weg, dessen `icu_event_id` schon als
+Plan-Eintrag dasteht.
+
+**Das Aufräumen hätte übertragene Einheiten mitgenommen.** Die Kaskade auf
+`planvorschlaege` hätte nach sieben Tagen auch die Einheiten gelöscht, die
+längst in intervals.icu stehen — samt ihrer Kennung. Sätze mit übertragenen
+Einheiten bleiben jetzt stehen; sie sind der einzige Beleg dafür, wie eine
+Einheit in den Kalender gekommen ist.
+
+**Zwei gleich beschriftete Werkzeugaufrufe fielen im Faden zu einem
+zusammen.** Der Strom schlüsselt sie nach der Kennung des Ereignisses, das
+Mitschreiben tat es nach der Beschriftung. Ein wiedergeöffneter Faden hätte
+also anders ausgesehen als der Strom — genau das, was nicht passieren soll.
+Jetzt beides nach der Kennung.
+
+**Eine unbekannte Einheit ergab eine HTML-Fehlerseite.** Die Route ließ die
+Ausnahme durch, der Client las sie als JSON und zeigte einen SyntaxError. Die
+Route antwortet jetzt mit 404, wie ihr Gegenstück beim Verwerfen.
+
+Dazu drei Stellen ohne Datenverlust:
+
+* `vorschlaegeListe` las die ganze Tabelle `planeinheiten` und filterte im
+  Speicher — bei jedem Aufruf der Planseite. Jetzt mit `IN`.
+* «heute, 19:14» wurde auf dem Server gerechnet und im Browser noch einmal.
+  Zeitzone und Mitternacht können dazwischenliegen; das gab eine Abweichung
+  beim Andocken. `komponenten/zeitmarke.tsx` zeigt serverseitig das schlichte
+  Datum und ersetzt es nach dem ersten Effekt.
+* «Neu» tat nichts, wenn schon `null` offen war — ein gescheiterter erster
+  Zug ließ sich ohne Neuladen nicht wegräumen. Ein Zähler neben der Kennung
+  löst das.
+
+Und eine Stelle, die schon beim Schreiben auffiel: `PlanVorschlaege` hatte
+die Sätze in einen eigenen Zustand kopiert. Diese Kopie wäre stehengeblieben,
+wenn `router.refresh()` neue Daten bringt — ein soeben bestellter Satz wäre
+gar nicht aufgetaucht. Die Sätze kommen jetzt bei jedem Aufruf frisch vom
+Server, und jede Änderung stößt ein `router.refresh()` an. Eine zweite
+Buchführung in der Oberfläche wäre beim Zustand einer Einheit die falsche
+Stelle für einen Irrtum.

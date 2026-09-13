@@ -1,0 +1,2 @@
+ALTER TABLE "planvorschlaege" ADD COLUMN "verworfen_am" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "planvorschlaege_verworfen_idx" ON "planvorschlaege" USING btree ("verworfen_am");

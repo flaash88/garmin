@@ -2,6 +2,7 @@ import { desc } from 'drizzle-orm'
 import { datenbank } from '@/lib/db'
 import { wellness, zonen } from '@/lib/db/schema'
 import { pace, zahl } from '@/lib/format'
+import { zielLesen, zielSatz } from '@/lib/daten/einstellungen'
 
 /**
  * Athletenprofil als Systemabschnitt: Zonen, Schwellen, Tonfall.
@@ -43,6 +44,7 @@ export async function athletenprofil(): Promise<string> {
   if (zwischenspeicher && zwischenspeicher.bis > jetzt) return zwischenspeicher.text
 
   const zonenZeilen = await datenbank().select().from(zonen)
+  const ziel = await zielLesen()
   const letzte = await datenbank()
     .select()
     .from(wellness)
@@ -83,6 +85,18 @@ Der Athlet ist der einzige Nutzer. Die Daten stammen aus intervals.icu.`)
     if (stuecke.length > 0) {
       teile.push(`Letzter Stand (${w.tag}): ${stuecke.join(' · ')}`)
     }
+  }
+
+  /*
+   * Das Ziel steht dauerhaft im Profil und geht damit in **jede** Antwort ein
+   * — auch ins Wochenbriefing, nicht nur in die Planung.
+   */
+  const zielText = zielSatz(ziel)
+  if (zielText) {
+    teile.push(`Ziel des Athleten: ${zielText}
+
+Bezieh dich darauf, wo es etwas zur Sache tut — bei der Einordnung einer Woche,
+bei der Frage, ob eine Einheit passt, bei der Planung. Nicht in jedem Satz.`)
   }
 
   teile.push(`Eigene Kennzahlen, die intervals.icu nicht liefert und die Takt

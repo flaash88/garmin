@@ -1,7 +1,8 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Markdown } from './markdown'
+import { uhrzeit } from '@/lib/format'
 
 /**
  * Antwortstrom des Coach. Jeder Werkzeugaufruf erscheint als einklappbare
@@ -9,7 +10,9 @@ import { Markdown } from './markdown'
  *
  *     Aktivitäten der letzten 8 Wochen geladen · 31 Einheiten · 218,4 km
  *
- * Phase 5 hängt das Agent SDK dahinter. Der Strom selbst ist hier fertig.
+ * Der Verlauf liegt in der Datenbank, nicht im Zustand dieser Komponente:
+ * beim Wiederöffnen eines Fadens wird er von dort geladen, samt der
+ * Werkzeugzeilen von damals.
  */
 
 export interface Werkzeugzeile {
@@ -31,6 +34,36 @@ interface Nachricht {
    * neuen Token.
    */
   zugang: string | null
+}
+
+interface AbgelegteNachricht {
+  rolle?: unknown
+  text?: unknown
+  werkzeuge?: unknown
+  zugang?: unknown
+  fehler?: unknown
+  erstelltAm?: unknown
+}
+
+function abgelegteLesen(roh: unknown): Nachricht[] {
+  if (!Array.isArray(roh)) return []
+  return roh.map((r: AbgelegteNachricht, i): Nachricht => {
+    const werkzeuge = Array.isArray(r.werkzeuge) ? r.werkzeuge : []
+    return {
+      rolle: r.rolle === 'du' ? 'du' : 'coach',
+      text: typeof r.text === 'string' ? r.text : '',
+      zeit: typeof r.erstelltAm === 'string' ? uhrzeit(new Date(r.erstelltAm)) : '',
+      werkzeuge: werkzeuge.map((w: { beschriftung?: unknown; detail?: unknown }, j) => ({
+        id: `${i}-${j}`,
+        beschriftung: typeof w.beschriftung === 'string' ? w.beschriftung : 'Werkzeug',
+        detail: typeof w.detail === 'string' ? w.detail : null,
+        // Was abgelegt ist, läuft nicht mehr.
+        laeuft: false,
+      })),
+      zugang: typeof r.zugang === 'string' ? r.zugang : null,
+      fehler: typeof r.fehler === 'string' ? r.fehler : null,
+    }
+  })
 }
 
 function Werkzeug({ z }: { z: Werkzeugzeile }) {
@@ -62,16 +95,101 @@ function Werkzeug({ z }: { z: Werkzeugzeile }) {
   )
 }
 
-export function CoachStrom() {
+export function CoachStrom({
+  unterhaltungId,
+  ruecksetzung,
+  beiFaden,
+  beiAenderung,
+}: {
+  /** Der offene Faden, oder `null` für einen neuen. */
+  unterhaltungId: string | null
+  /**
+   * Zählt hoch, wenn «Neu» gedrückt wurde.
+   *
+   * Ohne das bliebe ein gescheiterter erster Zug stehen: er hat noch keinen
+   * Faden, `unterhaltungId` ist schon `null`, und ein zweites «Neu» änderte
+   * nichts.
+   */
+  ruecksetzung: number
+  /** Ein neuer Faden ist entstanden — die Liste daneben muss ihn kennen. */
+  beiFaden: (id: string) => void
+  /** Etwas wurde abgelegt: Titel oder Zeitstempel in der Liste sind veraltet. */
+  beiAenderung: () => void
+}) {
   const [verlauf, setVerlauf] = useState<Nachricht[]>([])
   const [eingabe, setEingabe] = useState('')
   const [laeuft, setLaeuft] = useState(false)
+  const [laedt, setLaedt] = useState(false)
+  const [ladefehler, setLadefehler] = useState<string | null>(null)
   const abbruch = useRef<AbortController | null>(null)
+  /**
+   * Der Faden, dessen Inhalt gerade angezeigt wird. Ohne diese Merkung würde
+   * der Wechsel auf einen soeben begonnenen Faden den laufenden Strom durch
+   * ein Nachladen aus der Datenbank ersetzen — mitten in der Antwort.
+   */
+  const angezeigt = useRef<string | null>(null)
+  const letzteRuecksetzung = useRef(ruecksetzung)
+  const ende = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (angezeigt.current === unterhaltungId && letzteRuecksetzung.current === ruecksetzung) {
+      return
+    }
+    angezeigt.current = unterhaltungId
+    letzteRuecksetzung.current = ruecksetzung
+
+    // Ein Wechsel während einer laufenden Antwort bricht sie ab. Abgelegt ist
+    // sie trotzdem — der Server schreibt unabhängig vom Strom mit.
+    abbruch.current?.abort()
+    setLadefehler(null)
+
+    if (unterhaltungId === null) {
+      setVerlauf([])
+      return
+    }
+
+    let verworfen = false
+    setLaedt(true)
+    void (async () => {
+      try {
+        const antwort = await fetch(
+          `/api/coach/unterhaltungen/${encodeURIComponent(unterhaltungId)}`,
+        )
+        if (!antwort.ok) throw new Error('Der Faden lässt sich nicht öffnen.')
+        const koerper = (await antwort.json()) as { nachrichten?: unknown }
+        if (!verworfen) setVerlauf(abgelegteLesen(koerper.nachrichten))
+      } catch (fehler) {
+        if (!verworfen) {
+          setVerlauf([])
+          setLadefehler(
+            fehler instanceof Error ? fehler.message : 'Der Faden lässt sich nicht öffnen.',
+          )
+        }
+      } finally {
+        if (!verworfen) setLaedt(false)
+      }
+    })()
+    return () => {
+      verworfen = true
+    }
+  }, [unterhaltungId, ruecksetzung])
+
+  useEffect(() => {
+    ende.current?.scrollIntoView({ block: 'end' })
+  }, [verlauf.length])
+
+  const letzteErsetzen = useCallback((wie: (n: Nachricht) => Nachricht) => {
+    setVerlauf((v) => {
+      const letzte = v.at(-1)
+      if (!letzte) return v
+      const neu = [...v]
+      neu[neu.length - 1] = wie(letzte)
+      return neu
+    })
+  }, [])
 
   function jetzt(): string {
-    const d = new Date()
-    const zz = (n: number) => String(n).padStart(2, '0')
-    return `${zz(d.getHours())}:${zz(d.getMinutes())}`
+    return uhrzeit(new Date())
   }
 
   async function senden(frage: string) {
@@ -84,6 +202,7 @@ export function CoachStrom() {
     ])
     setEingabe('')
     setLaeuft(true)
+    setLadefehler(null)
 
     abbruch.current = new AbortController()
 
@@ -91,13 +210,7 @@ export function CoachStrom() {
       const antwort = await fetch('/api/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          frage,
-          // Bisherige Züge mitgeben, damit der Coach den Faden hält.
-          verlauf: verlauf
-            .filter((n) => n.text.length > 0)
-            .map((n) => ({ rolle: n.rolle, text: n.text })),
-        }),
+        body: JSON.stringify({ frage, unterhaltungId }),
         signal: abbruch.current.signal,
       })
 
@@ -107,24 +220,18 @@ export function CoachStrom() {
         // sagen, der Schlüssel fehle.
         let grund: string | null = null
         try {
-          const koerper = (await antwort.json()) as { fehler?: unknown }
+          const koerper = (await antwort.json()) as { fehler?: unknown; unterhaltungId?: unknown }
           if (typeof koerper.fehler === 'string') grund = koerper.fehler
+          if (typeof koerper.unterhaltungId === 'string') fadenUebernehmen(koerper.unterhaltungId)
         } catch {
           /* Kein brauchbarer Körper — dann bleibt es beim Statuscode. */
         }
         if (antwort.status === 503 || antwort.status === 401) {
           // Zugang fehlt oder ist abgelaufen — kein allgemeiner Fehler.
-          setVerlauf((v) => {
-            const neu = [...v]
-            const l = neu.at(-1)
-            if (l) {
-              neu[neu.length - 1] = {
-                ...l,
-                zugang: grund ?? 'Zugang abgelaufen — Token neu erzeugen',
-              }
-            }
-            return neu
-          })
+          letzteErsetzen((l) => ({
+            ...l,
+            zugang: grund ?? 'Zugang abgelaufen — Token neu erzeugen',
+          }))
           return
         }
         throw new Error(grund ?? `Der Coach antwortet nicht (${antwort.status}).`)
@@ -157,20 +264,28 @@ export function CoachStrom() {
     } catch (fehler) {
       if (fehler instanceof DOMException && fehler.name === 'AbortError') return
       const text = fehler instanceof Error ? fehler.message : 'Unbekannter Fehler'
-      setVerlauf((v) => {
-        const neu = [...v]
-        const letzte = neu.at(-1)
-        if (letzte) neu[neu.length - 1] = { ...letzte, fehler: text }
-        return neu
-      })
+      letzteErsetzen((l) => ({ ...l, fehler: text }))
     } finally {
       setLaeuft(false)
+      beiAenderung()
     }
+  }
+
+  /** Den Faden übernehmen, ohne dass der Nachladeeffekt den Strom überschreibt. */
+  function fadenUebernehmen(id: string) {
+    if (angezeigt.current === id) return
+    angezeigt.current = id
+    beiFaden(id)
   }
 
   function verarbeiten(ereignis: unknown) {
     if (typeof ereignis !== 'object' || ereignis === null) return
     const e = ereignis as Record<string, unknown>
+
+    if (e['art'] === 'faden' && typeof e['id'] === 'string') {
+      fadenUebernehmen(e['id'])
+      return
+    }
 
     setVerlauf((v) => {
       const neu = [...v]
@@ -210,14 +325,25 @@ export function CoachStrom() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 md:p-6">
-        {verlauf.length === 0 ? (
+        {laedt ? (
+          <p className="font-mono text-[11.5px] text-text-schwach">Faden wird geladen …</p>
+        ) : null}
+
+        {ladefehler ? (
+          <p className="text-[12.5px] text-negativ" role="alert">
+            {ladefehler}
+          </p>
+        ) : null}
+
+        {verlauf.length === 0 && !laedt && ladefehler === null ? (
           <div className="border border-kontur bg-flaeche p-6">
             <p className="text-[13.5px] leading-relaxed text-text">
               Frag den Coach nach deinen Daten. Er liest Aktivitäten, Belastung,
               Erholung und Plan.
             </p>
             <p className="mt-2 font-mono text-[11px] text-text-schwach">
-              Keine Daten verlassen den Server.
+              Läuft über dein Claude-Abo. Deine Laufdaten gehen mit der Frage an
+              Anthropic, sonst nirgendwohin.
             </p>
           </div>
         ) : null}
@@ -252,6 +378,15 @@ export function CoachStrom() {
                 i === verlauf.length - 1 ? (
                   <p className="mt-3 font-mono text-[11.5px] text-text-schwach">
                     Der Coach sieht sich deine Daten an …
+                  </p>
+                ) : null}
+
+                {n.text.length === 0 &&
+                n.fehler === null &&
+                n.zugang === null &&
+                !(laeuft && i === verlauf.length - 1) ? (
+                  <p className="mt-3 font-mono text-[11.5px] text-text-schwach">
+                    Abgebrochen — der Coach ist nicht zu einer Antwort gekommen.
                   </p>
                 ) : null}
 
@@ -306,6 +441,7 @@ export function CoachStrom() {
             )}
           </article>
         ))}
+        <div ref={ende} />
       </div>
 
       <form

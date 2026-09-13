@@ -93,3 +93,20 @@ export function mitVorzeichen(wert: number, nachkommastellen = 1): string {
   if (gerundet < 0) return `−${zahl(Math.abs(gerundet), nachkommastellen)}`
   return zahl(0, nachkommastellen)
 }
+
+/**
+ * «heute, 19:14» · «gestern, 08:03» · «11.09.2026»
+ *
+ * Für Listen, in denen das Datum nur der Einordnung dient. Die letzten beiden
+ * Tage stehen ausgeschrieben da, weil «13.09.2026» beim Überfliegen nichts
+ * darüber sagt, ob das eben war oder vor einem Monat.
+ */
+export function wann(wert: Date | string, jetzt: Date = new Date()): string {
+  const d = alsDatum(wert)
+  if (Number.isNaN(d.getTime())) return '–'
+  const tag = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const tage = Math.round((tag(jetzt) - tag(d)) / 86_400_000)
+  if (tage === 0) return `heute, ${uhrzeit(d)}`
+  if (tage === 1) return `gestern, ${uhrzeit(d)}`
+  return datum(d)
+}

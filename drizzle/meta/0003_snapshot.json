@@ -1,0 +1,1199 @@
+{
+  "id": "5eb74c78-6302-4980-9790-76ccc0f87160",
+  "prevId": "926cc77a-854a-4a83-a85d-87fa255d554e",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.abgleich": {
+      "name": "abgleich",
+      "schema": "",
+      "columns": {
+        "quelle": {
+          "name": "quelle",
+          "type": "varchar(32)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "bis_einschliesslich": {
+          "name": "bis_einschliesslich",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "zuletzt_am": {
+          "name": "zuletzt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "zuletzt_fehler": {
+          "name": "zuletzt_fehler",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.aktivitaeten": {
+      "name": "aktivitaeten",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "beginn": {
+          "name": "beginn",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "typ": {
+          "name": "typ",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dauer_sekunden": {
+          "name": "dauer_sekunden",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "strecke_meter": {
+          "name": "strecke_meter",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hoehenmeter": {
+          "name": "hoehenmeter",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "puls_schnitt": {
+          "name": "puls_schnitt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "puls_max": {
+          "name": "puls_max",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "belastung": {
+          "name": "belastung",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rohdaten": {
+          "name": "rohdaten",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geholt_am": {
+          "name": "geholt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "aktivitaeten_beginn_idx": {
+          "name": "aktivitaeten_beginn_idx",
+          "columns": [
+            {
+              "expression": "beginn",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.analysen": {
+      "name": "analysen",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(96)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "art": {
+          "name": "art",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bezug": {
+          "name": "bezug",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "modell": {
+          "name": "modell",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "erstellt_am": {
+          "name": "erstellt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "analysen_art_bezug_idx": {
+          "name": "analysen_art_bezug_idx",
+          "columns": [
+            {
+              "expression": "art",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "bezug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ausruestung": {
+      "name": "ausruestung",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "art": {
+          "name": "art",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "in_benutzung": {
+          "name": "in_benutzung",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "laufleistung_meter": {
+          "name": "laufleistung_meter",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rohdaten": {
+          "name": "rohdaten",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geholt_am": {
+          "name": "geholt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.einstellungen": {
+      "name": "einstellungen",
+      "schema": "",
+      "columns": {
+        "schluessel": {
+          "name": "schluessel",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "wert": {
+          "name": "wert",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "geaendert_am": {
+          "name": "geaendert_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.feldbefuellung": {
+      "name": "feldbefuellung",
+      "schema": "",
+      "columns": {
+        "quelle": {
+          "name": "quelle",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "feld": {
+          "name": "feld",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "befuellt": {
+          "name": "befuellt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gesamt": {
+          "name": "gesamt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "geprueft_am": {
+          "name": "geprueft_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nachrichten": {
+      "name": "nachrichten",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "unterhaltung_id": {
+          "name": "unterhaltung_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rolle": {
+          "name": "rolle",
+          "type": "varchar(8)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "werkzeuge": {
+          "name": "werkzeuge",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "zugang": {
+          "name": "zugang",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fehler": {
+          "name": "fehler",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reihenfolge": {
+          "name": "reihenfolge",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "erstellt_am": {
+          "name": "erstellt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "nachrichten_faden_idx": {
+          "name": "nachrichten_faden_idx",
+          "columns": [
+            {
+              "expression": "unterhaltung_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reihenfolge",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nachrichten_unterhaltung_id_unterhaltungen_id_fk": {
+          "name": "nachrichten_unterhaltung_id_unterhaltungen_id_fk",
+          "tableFrom": "nachrichten",
+          "tableTo": "unterhaltungen",
+          "columnsFrom": [
+            "unterhaltung_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.plan": {
+      "name": "plan",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tag": {
+          "name": "tag",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "typ": {
+          "name": "typ",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "beschreibung": {
+          "name": "beschreibung",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ziel_belastung": {
+          "name": "ziel_belastung",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ziel_dauer_sekunden": {
+          "name": "ziel_dauer_sekunden",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ziel_strecke_meter": {
+          "name": "ziel_strecke_meter",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rohdaten": {
+          "name": "rohdaten",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geholt_am": {
+          "name": "geholt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "plan_tag_idx": {
+          "name": "plan_tag_idx",
+          "columns": [
+            {
+              "expression": "tag",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.planeinheiten": {
+      "name": "planeinheiten",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "vorschlag_id": {
+          "name": "vorschlag_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tag": {
+          "name": "tag",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "typ": {
+          "name": "typ",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Run'"
+        },
+        "beschreibung": {
+          "name": "beschreibung",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dauer_sekunden": {
+          "name": "dauer_sekunden",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "strecke_meter": {
+          "name": "strecke_meter",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ziel_belastung": {
+          "name": "ziel_belastung",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ersetzt_plan_id": {
+          "name": "ersetzt_plan_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "zustand": {
+          "name": "zustand",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'vorschlag'"
+        },
+        "icu_event_id": {
+          "name": "icu_event_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fehler": {
+          "name": "fehler",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verworfen_am": {
+          "name": "verworfen_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uebertragen_am": {
+          "name": "uebertragen_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reihenfolge": {
+          "name": "reihenfolge",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "planeinheiten_vorschlag_idx": {
+          "name": "planeinheiten_vorschlag_idx",
+          "columns": [
+            {
+              "expression": "vorschlag_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reihenfolge",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "planeinheiten_tag_idx": {
+          "name": "planeinheiten_tag_idx",
+          "columns": [
+            {
+              "expression": "tag",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "planeinheiten_zustand_idx": {
+          "name": "planeinheiten_zustand_idx",
+          "columns": [
+            {
+              "expression": "zustand",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "planeinheiten_vorschlag_id_planvorschlaege_id_fk": {
+          "name": "planeinheiten_vorschlag_id_planvorschlaege_id_fk",
+          "tableFrom": "planeinheiten",
+          "tableTo": "planvorschlaege",
+          "columnsFrom": [
+            "vorschlag_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.planvorschlaege": {
+      "name": "planvorschlaege",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ziel": {
+          "name": "ziel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "von_tag": {
+          "name": "von_tag",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bis_tag": {
+          "name": "bis_tag",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "wochen": {
+          "name": "wochen",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "begruendung": {
+          "name": "begruendung",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "erstellt_am": {
+          "name": "erstellt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "planvorschlaege_erstellt_idx": {
+          "name": "planvorschlaege_erstellt_idx",
+          "columns": [
+            {
+              "expression": "erstellt_am",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.strecken": {
+      "name": "strecken",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "laenge_meter": {
+          "name": "laenge_meter",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signatur": {
+          "name": "signatur",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "erst_mal": {
+          "name": "erst_mal",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "letzt_mal": {
+          "name": "letzt_mal",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "anzahl": {
+          "name": "anzahl",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.strecken_zuordnung": {
+      "name": "strecken_zuordnung",
+      "schema": "",
+      "columns": {
+        "aktivitaet_id": {
+          "name": "aktivitaet_id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "strecke_id": {
+          "name": "strecke_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mittlerer_abstand_meter": {
+          "name": "mittlerer_abstand_meter",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "strecken_zuordnung_strecke_idx": {
+          "name": "strecken_zuordnung_strecke_idx",
+          "columns": [
+            {
+              "expression": "strecke_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "strecken_zuordnung_aktivitaet_id_aktivitaeten_id_fk": {
+          "name": "strecken_zuordnung_aktivitaet_id_aktivitaeten_id_fk",
+          "tableFrom": "strecken_zuordnung",
+          "tableTo": "aktivitaeten",
+          "columnsFrom": [
+            "aktivitaet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "strecken_zuordnung_strecke_id_strecken_id_fk": {
+          "name": "strecken_zuordnung_strecke_id_strecken_id_fk",
+          "tableFrom": "strecken_zuordnung",
+          "tableTo": "strecken",
+          "columnsFrom": [
+            "strecke_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.unterhaltungen": {
+      "name": "unterhaltungen",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "titel": {
+          "name": "titel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "begonnen_am": {
+          "name": "begonnen_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "zuletzt_am": {
+          "name": "zuletzt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "unterhaltungen_zuletzt_idx": {
+          "name": "unterhaltungen_zuletzt_idx",
+          "columns": [
+            {
+              "expression": "zuletzt_am",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.verlaeufe": {
+      "name": "verlaeufe",
+      "schema": "",
+      "columns": {
+        "aktivitaet_id": {
+          "name": "aktivitaet_id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "daten": {
+          "name": "daten",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fassung": {
+          "name": "fassung",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "geholt_am": {
+          "name": "geholt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "verlaeufe_aktivitaet_id_aktivitaeten_id_fk": {
+          "name": "verlaeufe_aktivitaet_id_aktivitaeten_id_fk",
+          "tableFrom": "verlaeufe",
+          "tableTo": "aktivitaeten",
+          "columnsFrom": [
+            "aktivitaet_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wellness": {
+      "name": "wellness",
+      "schema": "",
+      "columns": {
+        "tag": {
+          "name": "tag",
+          "type": "date",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "ctl": {
+          "name": "ctl",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "atl": {
+          "name": "atl",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "form": {
+          "name": "form",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ruhepuls": {
+          "name": "ruhepuls",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "hrv": {
+          "name": "hrv",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gewicht": {
+          "name": "gewicht",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "schlaf_sekunden": {
+          "name": "schlaf_sekunden",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "befinden": {
+          "name": "befinden",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "beschwerden": {
+          "name": "beschwerden",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verletzung": {
+          "name": "verletzung",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notizen": {
+          "name": "notizen",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rohdaten": {
+          "name": "rohdaten",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geholt_am": {
+          "name": "geholt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.zonen": {
+      "name": "zonen",
+      "schema": "",
+      "columns": {
+        "sportart": {
+          "name": "sportart",
+          "type": "varchar(32)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "schwellen_puls": {
+          "name": "schwellen_puls",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_puls": {
+          "name": "max_puls",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "schwellen_pace_sekunden_je_km": {
+          "name": "schwellen_pace_sekunden_je_km",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "puls_grenzen": {
+          "name": "puls_grenzen",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rohdaten": {
+          "name": "rohdaten",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "geholt_am": {
+          "name": "geholt_am",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

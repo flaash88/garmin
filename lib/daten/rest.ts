@@ -1,4 +1,4 @@
-import { desc, gte, lte, and } from 'drizzle-orm'
+import { desc, eq, gte, inArray, lte, and } from 'drizzle-orm'
 import { datenbank } from '@/lib/db'
 import { ausruestung, plan, strecken, wellness, zonen } from '@/lib/db/schema'
 import { tagText } from './zeit'
@@ -84,4 +84,20 @@ export function spalteZeigen(
 
   if (bekannt.length === 0) return true
   return !bekannt.every((s) => s.befuellt === 0)
+}
+
+/** Bestehende Plan-Einträge zu bestimmten Kennungen — für «ersetzt …». */
+export async function planNachKennungen(ids: string[]): Promise<PlanZeile[]> {
+  if (ids.length === 0) return []
+  return datenbank().select().from(plan).where(inArray(plan.id, ids))
+}
+
+/**
+ * Eine gespiegelte Plan-Einheit entfernen.
+ *
+ * Gebraucht, wenn Takt sie in intervals.icu gelöscht hat: der Abgleich
+ * schreibt nur hinzu und räumt nichts weg, was drüben verschwunden ist.
+ */
+export async function planZeileLoeschen(id: string): Promise<void> {
+  await datenbank().delete(plan).where(eq(plan.id, id))
 }
